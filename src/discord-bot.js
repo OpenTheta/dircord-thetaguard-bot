@@ -5,6 +5,8 @@ const wait = require('node:timers/promises').setTimeout;
 const {FOOTER_TEXT, DESCRIPTION, LOGO_URL, VERIFY_BASE_URL, USER_REQUESTS, ADMIN_REQUESTS} = require('./Config')
 const database = require("../models/dbHelpers");
 const {ethers} = require("ethers");
+require("dotenv").config();
+const { Client, Collection, GatewayIntentBits, DMChannel } = require("discord.js");
 
 module.exports = {
     newGuild,
@@ -14,7 +16,9 @@ module.exports = {
     setRolesForUser,
     setRoleForUser,
     setRolesForUsers,
-    setGuildRolesForUsersByContract
+    checkAllExpiredRequests,
+    removeExpiredRequests
+
 }
 
 // Create new channels in a new Guild (thetaguard-verify)
@@ -168,7 +172,7 @@ async function letsGoButton(interaction) {
     let userName = interaction.user.username + "#" + interaction.user.discriminator;
     let interactionId = interaction.id
     await wait(500);
-    let content = `Use this custom link to connect (valid for 5 minutes) \nGuild: ${interaction.message.guildId} Member: ${interaction.user.id}`
+    let content = `Use this custom link to connect (valid for 20 minutes) \nGuild: ${interaction.message.guildId} Member: ${interaction.user.id}`
 
     let timestamp = new Date().getTime()
     let message = getMessage(community, userName, interactionId, timestamp)
@@ -281,17 +285,47 @@ async function setRolesForUser(userId, guildId) {
     // console.log(user)
     if(user[0]) {
         for(let role of roles) {
+            // console.log(role)
             let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
             let res = await axios.get(url, {
                 headers: {'User-Agent': 'OT ThetaGuard Bot'}
             }).catch((e) => {
                 console.log(e)
             })
-
+            // console.log(url)
             let owners = res.data.owners
-            let owner = owners.find((owner) => {
-                return owner.address.toLowerCase() === user[0].wallet.toLowerCase()
-            })
+
+            // todo: test if new code works
+            // console.log("user length:",user.length)
+            let owner;
+            for(let i=0; i<user.length; i++) {
+                let o = owners.find((o) => {
+                    return o.address.toLowerCase() === user[i].wallet.toLowerCase()
+                })
+                console.log(o)
+                if(owner && o) {
+                    owner.ownedAmount += o.ownedAmount
+                    Object.keys(o.attributes).forEach(key => {
+                        if (owner.attributes[key]) {
+                            // If the key exists in attributes1, merge the two arrays
+                            owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
+                        } else {
+                            // If the key does not exist in attributes1, add it
+                            owner.attributes[key] = o.attributes[key];
+                        }
+                    });
+
+                } else if(o) {
+                    owner = o;
+                }
+                // console.log("owner",owner)
+            }
+            // let owner = owners.find((o) => {
+            //     // return owner.address.toLowerCase() === user[0].wallet.toLowerCase()
+            //     return user.some((u) => {
+            //         return o.address.toLowerCase() === u.wallet.toLowerCase();
+            //     });
+            // })
 
             // console.log('setRolesForUser', owner)
 
@@ -328,30 +362,49 @@ async function setRoleForUser(userId, guildId, roleId) {
 }
 
 async function setUserRole(role, userId, userData) {
+    console.log(role, userId, userData)
     let guild = await global.client.guilds.cache.get(role.guildId)
     let discordRole = await guild.roles.cache.get(role.roleId)
-    if(userData && userData.ownedAmount >= role.min_amount && (role.max_amount === null || userData.ownedAmount <= role.max_amount)) {
-        if(role.trait_type && role.trait_value) {
-            if(userData.attributes && userData.attributes[role.trait_type] && userData.attributes[role.trait_type].includes(role.trait_value)){
-                console.log("role added (1)")
-                let member = await guild.members.fetch(userId);
-                await member.roles.add(discordRole)
+    let member = await guild.members.fetch(userId);
+    if (userData && userData.ownedAmount >= role.min_amount && (role.max_amount === null || userData.ownedAmount <= role.max_amount)) {
+        // check if specific trait is set
+        if (role.trait_type && role.trait_value) {
+            if (userData.attributes && userData.attributes[role.trait_type]) {
+                const traitOccurrences = userData.attributes[role.trait_type].filter(value => value === role.trait_value).length;
+
+                if (traitOccurrences >= role.min_amount && (role.max_amount === null || traitOccurrences <= role.max_amount)) {
+                    if (!member.roles.cache.has(discordRole.id)) {
+                        console.log("role added (traits)")
+                        await member.roles.add(discordRole)
+                    }
+                } else {
+                    if (member.roles.cache.has(discordRole.id)) {
+                        console.log("role removed (traits, but not enough)")
+                        await member.roles.remove(discordRole)
+                    }
+                }
             } else {
-                console.log("role removed (1)")
-                let member = await guild.members.fetch(userId);
-                await member.roles.remove(discordRole)
+                if (member.roles.cache.has(discordRole.id)) {
+                    console.log("role removed (traits, but user data does not have right one)")
+                    await member.roles.remove(discordRole)
+                }
             }
         } else {
-            console.log("role added (2)")
-            let member = await guild.members.fetch(userId);
-            await member.roles.add(discordRole)
+            // no traits are set, give role if user does not already have it
+            if (!member.roles.cache.has(discordRole.id)) {
+                console.log("role added (no traits)")
+                await member.roles.add(discordRole)
+            }
         }
     } else {
-        console.log("role removed (2)")
-        let member = await guild.members.fetch(userId);
-        await member.roles.remove(discordRole)
+        // Take role away if user has a role but is not eligible
+        if (member.roles.cache.has(discordRole.id)) {
+            console.log("role removed (no traits)")
+            await member.roles.remove(discordRole)
+        }
     }
 }
+
 
 
 async function setGuildRolesForUsersByContract(contract, guildId) {
@@ -387,37 +440,117 @@ async function setGuildRolesForUsersByContract(contract, guildId) {
     })
 }
 
+// async function setRoleForGuildUsers(guildId, roleId) {
+//     let users = await database.getUsersInGuild(guildId)
+//     let role = await database.getGuildRole(roleId)
+//     let guild = await global.client.guilds.cache.get(guildId)
+//     await guild.members.fetch()
+//     let membersWithRole = guild.roles.cache.get(roleId).members.map(m=>m.user);
+//     let discordRole = await guild.roles.cache.get(roleId)
+//     if(role[0]) {
+//         let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
+//         let res = await axios.get(url, {
+//             headers: { 'User-Agent':'OT ThetaGuard Bot' }
+//         }).catch((e) => {console.log("Error",e)})
+//         let owners = res.data.owners
+//         users.forEach((user) => {
+//             let owner = owners.find((owner) => {
+//                 return owner.address === user.wallet.toLowerCase()
+//             })
+//             if(owner) {
+//                 setUserRole(role[0], user.userId, owner)
+//             } else {
+//                 if(membersWithRole.find((member) => {return user.userId === member.id})) {
+//                     guild.members.fetch(user.userId).then((member) => {
+//                         member.roles.remove(discordRole)
+//                     })
+//                 }
+//             }
+//         })
+//     } else {
+//         users.forEach((user) => {
+//             if(membersWithRole.find((member) => {return user.userId === member.id})) {
+//                 guild.members.fetch(user.userId).then((member) => {
+//                     member.roles.remove(discordRole)
+//                 })
+//             }
+//         })
+//     }
+// }
+
 async function setRoleForGuildUsers(guildId, roleId) {
     let users = await database.getUsersInGuild(guildId)
+    let formattedUsers = []
+    users.forEach(user => {
+        let existingUser = formattedUsers.find(u => u.userId === user.userId);
+
+        if (existingUser) {
+            existingUser.wallets.push(user.wallet);
+        } else {
+            formattedUsers.push({
+                id: user.id,
+                userId: user.userId,
+                guildId: user.guildId,
+                wallets: [user.wallet]
+            });
+        }
+    });
     let role = await database.getGuildRole(roleId)
     let guild = await global.client.guilds.cache.get(guildId)
     await guild.members.fetch()
     let membersWithRole = guild.roles.cache.get(roleId).members.map(m=>m.user);
     let discordRole = await guild.roles.cache.get(roleId)
-    let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
-    let res = await axios.get(url, {
-        headers: { 'User-Agent':'OT ThetaGuard Bot' }
-    }).catch((e) => {console.log("Error",e)})
-    let owners = res.data.owners
-    users.forEach((user) => {
-        let owner = owners.find((owner) => {
-            return owner.address === user.wallet.toLowerCase()
-        })
-        if(owner) {
-            setUserRole(role[0], user.userId, owner)
-        } else {
+    if(role[0]) {
+        let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
+        let res = await axios.get(url, {
+            headers: { 'User-Agent':'OT ThetaGuard Bot' }
+        }).catch((e) => {console.log("Error",e)})
+        let owners = res.data.owners
+
+        // todo: Test if new code works
+        for(let user of formattedUsers) {
+            let owner;
+            for(let wallet of user.wallets) {
+                let o = owners.find((o) => {
+                    return o.address.toLowerCase() === wallet.toLowerCase()
+                })
+                if(owner && o) {
+                    owner.ownedAmount += o.ownedAmount
+                    Object.keys(o.attributes).forEach(key => {
+                        if (owner.attributes[key]) {
+                            // If the key exists in attributes1, merge the two arrays
+                            owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
+                        } else {
+                            // If the key does not exist in attributes1, add it
+                            owner.attributes[key] = o.attributes[key];
+                        }
+                    });
+
+                } else if (o){
+                    owner = o;
+                }
+            }
+            // let owner = owners.find((owner) => {
+            //     return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
+            // });
+            await setUserRole(role[0], user.userId, owner)
+        }
+    } else {
+        users.forEach((user) => {
             if(membersWithRole.find((member) => {return user.userId === member.id})) {
                 guild.members.fetch(user.userId).then((member) => {
                     member.roles.remove(discordRole)
                 })
             }
-        }
-    })
+        })
+    }
 }
 
 async function setRolesForUsers(rolesToCheck) {
+    // console.log(rolesToCheck)
     const keys = Object.keys(rolesToCheck);
     for(let key of keys) {
+        // console.log(rolesToCheck[key].users)
         let role = rolesToCheck[key]
         let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
         let res = await axios.get(url, {
@@ -425,10 +558,47 @@ async function setRolesForUsers(rolesToCheck) {
         }).catch((e) => {console.log("Error",e)})
         let owners = res.data.owners
         for(let user of rolesToCheck[key].users) {
+            // let owner = owners.find((owner) => {
+            //     return owner.address === user.wallet.toLowerCase()
+            // })
             let owner = owners.find((owner) => {
-                return owner.address === user.wallet.toLowerCase()
-            })
+                return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
+            });
+            // console.log(role, user.userId, owner)
             await setUserRole(role, user.userId, owner)
         }
     }
+}
+
+function removeExpiredRequests(requestId) {
+    const currentTime = new Date().getTime();
+    const expirationTimeInMilliseconds =20 * 60 * 1000;
+    if(USER_REQUESTS[requestId]) {
+        if (currentTime - USER_REQUESTS[requestId].timestamp > expirationTimeInMilliseconds) {
+            delete USER_REQUESTS[requestId];
+        }
+    }
+    if(ADMIN_REQUESTS[requestId]) {
+        if (currentTime - ADMIN_REQUESTS[requestId].timestamp > expirationTimeInMilliseconds) {
+            delete ADMIN_REQUESTS[requestId];
+        }
+    }
+
+}
+
+async function checkAllExpiredRequests() {
+    const currentTime = new Date().getTime();
+    const expirationTimeInMilliseconds = 20 * 60 * 1000;
+
+    Object.keys(USER_REQUESTS).forEach(requestId => {
+        if (currentTime - USER_REQUESTS[requestId].timestamp > expirationTimeInMilliseconds) {
+            delete USER_REQUESTS[requestId];
+        }
+    });
+
+    Object.keys(ADMIN_REQUESTS).forEach(requestId => {
+        if (currentTime - ADMIN_REQUESTS[requestId].timestamp > expirationTimeInMilliseconds) {
+            delete ADMIN_REQUESTS[requestId];
+        }
+    });
 }

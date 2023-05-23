@@ -21,34 +21,50 @@ module.exports = {
     getUserGuild,
     deleteGuildRole,
     getGuildRolesByContract,
-    getUserInGuild
+    getUserInGuild,
+    getGuilds,
 }
 
 // interact with projects table
+// function addGuild(guild) {
+//     return db('guilds').where({guildId: guild.guildId, verifyChannelId: guild.verifyChannelId, configChannelId: guild.configChannelId}).del().then(() => {
+//         return db("guilds").insert(guild);
+//     });
+// }
+
 function addGuild(guild) {
-    return db('guilds').where({guildId: guild.guildId, verifyChannelId: guild.verifyChannelId, configChannelId: guild.configChannelId}).del().then(() => {
-        return db("guilds").insert(guild);
-    });
+    return db("guilds").insert(guild).onConflict('guildId').merge();
 }
+
+// function addWallet(wallet) {
+//     return db('wallets').where({wallet: wallet.wallet}).del().then(() => {
+//         return db("wallets").insert(wallet);
+//     });
+// }
 
 function addWallet(wallet) {
-    return db('wallets').where({wallet: wallet.wallet}).del().then(() => {
-        return db("wallets").insert(wallet);
-    });
+    return db("wallets").insert(wallet).onConflict('wallet').merge();
 }
 
+// function addUser(user) {
+//     return db('users').where({userId: user.userId, guildId: user.guildId}).del().then(() => {
+//         return db("users").insert(user);
+//     });
+// }
+
 function addUser(user) {
-    return db('users').where({userId: user.userId, guildId: user.guildId}).del().then(() => {
-        return db("users").insert(user);
-    });
+    return db("users").insert(user).onConflict(['userId', 'guildId']).merge();
 }
+
 
 function getWalletGuilds(wallet, contract) {
     return db("users as u")
         .join("roles as r", "u.guildId", "r.guildId")
+        .join("wallets as w", "u.wallet", "w.wallet")
         .select(
             "u.userId",
             "u.wallet",
+            "w.thetadrop",
             "r.guildId",
             "r.roleId",
             "r.roleName",
@@ -72,16 +88,16 @@ function getUserWallets(userId) {
     return db("wallets").where({userId})
 }
 
-function updateWallet(wallet) {
-    return db('wallets').where(wallet).update(wallet)
-}
-
-function deleteWallet(wallet) {
-    return db("wallets").where({wallet}).del()
-}
+// function updateWallet(wallet) {
+//     return db('wallets').where(wallet).update(wallet)
+// }
+//
+// function deleteWallet(wallet) {
+//     return db("wallets").where({wallet}).del()
+// }
 
 function getUserGuilds(userId) {
-    return db("users").where({userId})
+    return db("users as u").where({ userId });
 }
 
 function getUserGuild(userId, guildId) {
@@ -89,15 +105,19 @@ function getUserGuild(userId, guildId) {
 }
 
 function updateUserGuild(user) {
-    return db("users").where({userId: user.userId, guildId: user.guildId}).update(user)
+    // return db("users").where({userId: user.userId, guildId: user.guildId, thetadrop: user.thetadrop}).update(user)
+    return db("users")
+        .insert(user)
+        .onConflict(["userId", "guildId", "thetadrop"])
+        .merge();
 }
 
-function deleteUserGuild(userId, guildId) {
-    return db("users").where({userId: userId, guildId: guildId}).del()
+function deleteUserGuild(userId, guildId, thetadrop) {
+    return db("users").where({userId: userId, guildId: guildId, thetadrop: thetadrop}).del()
 }
 
-function getGuild(guildId) {
-    return db("guilds").where({guildId})
+function getGuilds() {
+    return db("guilds")
 }
 
 function getGuildRole(roleId) {
