@@ -9,7 +9,7 @@ const {Client, GatewayIntentBits} = require("discord.js");
 const {backendTracking, interval} = require("./src/backend");
 const database = require("./models/dbHelpers");
 const {ADMIN_REQUESTS, USER_REQUESTS} = require("./src/Config");
-const {setupRolesButton, letsGoButton, newGuild} = require("./src/discord-bot");
+const {setupRolesButton, letsGoButton, newGuild, resendMessage} = require("./src/discord-bot");
 
 // Starting both http & https servers
 // const server = http.createServer(app);
@@ -32,6 +32,7 @@ function startDiscordBot() {
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildMessages,
             GatewayIntentBits.GuildMembers,
+            GatewayIntentBits.MessageContent,
         ]});
 
     client.once('ready', () => {
@@ -80,6 +81,18 @@ function startDiscordBot() {
         }
 
     });
+
+    client.on('messageCreate', message => {
+        // Ignore messages sent by a bot
+        if (message.author.bot) return;
+
+        console.log(message.content)
+        if (message.content.trim() === '!reload') {
+            // Execute the reload command
+            resendMessage(message)
+        }
+    });
+
 
     client.login(process.env.DISCORD_BOT_TOKEN);
 

@@ -17,8 +17,8 @@ module.exports = {
     setRoleForUser,
     setRolesForUsers,
     checkAllExpiredRequests,
-    removeExpiredRequests
-
+    removeExpiredRequests,
+    resendMessage
 }
 
 // Create new channels in a new Guild (thetaguard-verify)
@@ -107,6 +107,41 @@ async function newGuild(client, guildId) {
     }
 
     await database.addGuild(guildData).catch(e => {console.log(e)})
+}
+
+// reload the message of the private channel
+async function resendMessage(message) {
+    let guild = await database.getGuild(message.guildId)
+    if(message.channel.id !== guild[0].configChannelId) return;
+    const row1 = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setLabel("Setup Roles!")
+                .setCustomId('setupRoles')
+                .setStyle('Primary')
+        ).addComponents(
+            new ButtonBuilder()
+                .setLabel('Docs')
+                .setStyle('Link')
+                .setURL("https://opentheta.io")
+        );
+
+    await message.channel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setThumbnail(LOGO_URL)
+                .setTitle("Setup Your Guild Roles")
+                .setColor('#0F52BA')
+                .setDescription("** Keep this channel private, because everyone that has access can setup new roles!\n" +
+                    "1. Create the Roles that you want to connect to tokens\n" +
+                    "2. Follow the link below to setup the rules for each role\n\n" +
+                    "You can set:\n" +
+                    "- NFT contract\n" +
+                    "- Amount of tokens (min & max)\n" +
+                    "- Trait that the NFT needs to have")
+        ],
+        components: [row1]
+    })
 }
 
 async function setupRolesButton(interaction) {
@@ -213,10 +248,11 @@ async function letsGoButton(interaction) {
 }
 
 function getMessage(community, userName, interactionId, timestamp) {
+    let regex = /[^a-zA-Z0-9\s#]/g;
     return "- ThetaGuard (thetaguard.opentheta.io) asks you to sign this message for the purpose of verifying your account ownership. This is READ-ONLY access and will NOT trigger any blockchain transactions or incur any fees.\n" +
         "\n" +
-        "- Community: "+community+"\n" +
-        "- User: "+userName+"\n" +
+        "- Community: "+community.replace(regex, '')+"\n" +
+        "- User: "+userName.replace(regex, '')+"\n" +
         "- Discord Interaction: "+interactionId+"\n" +
         "- Timestamp: "+timestamp
 }
@@ -279,85 +315,94 @@ function generateString(length) {
 // }
 
 async function setRolesForUser(userId, guildId) {
-    console.log(guildId)
-    let roles = await database.getGuildRoles(guildId)
-    let user = await database.getUserInGuild(guildId, userId)
-    // console.log(user)
-    if(user[0]) {
-        for(let role of roles) {
-            // console.log(role)
-            let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
-            let res = await axios.get(url, {
-                headers: {'User-Agent': 'OT ThetaGuard Bot'}
-            }).catch((e) => {
-                console.log(e)
-            })
-            // console.log(url)
-            let owners = res.data.owners
-
-            // todo: test if new code works
-            // console.log("user length:",user.length)
-            let owner;
-            for(let i=0; i<user.length; i++) {
-                let o = owners.find((o) => {
-                    return o.address.toLowerCase() === user[i].wallet.toLowerCase()
+    try {
+        let roles = await database.getGuildRoles(guildId)
+        let user = await database.getUserInGuild(guildId, userId)
+        // console.log(user)
+        if(user[0]) {
+            for(let role of roles) {
+                // console.log(role)
+                let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
+                let res = await axios.get(url, {
+                    headers: {'User-Agent': 'OT ThetaGuard Bot'}
+                }).catch((e) => {
+                    console.log(e)
                 })
-                console.log(o)
-                if(owner && o) {
-                    owner.ownedAmount += o.ownedAmount
-                    Object.keys(o.attributes).forEach(key => {
-                        if (owner.attributes[key]) {
-                            // If the key exists in attributes1, merge the two arrays
-                            owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
-                        } else {
-                            // If the key does not exist in attributes1, add it
-                            owner.attributes[key] = o.attributes[key];
-                        }
-                    });
+                // console.log(url)
+                let owners = res.data.owners
 
-                } else if(o) {
-                    owner = o;
+                // todo: test if new code works
+                // console.log("user length:",user.length)
+                let owner;
+                for(let i=0; i<user.length; i++) {
+                    let o = owners.find((o) => {
+                        return o.address.toLowerCase() === user[i].wallet.toLowerCase()
+                    })
+                    console.log(o)
+                    if(owner && o) {
+                        owner.ownedAmount += o.ownedAmount
+                        Object.keys(o.attributes).forEach(key => {
+                            if (owner.attributes[key]) {
+                                // If the key exists in attributes1, merge the two arrays
+                                owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
+                            } else {
+                                // If the key does not exist in attributes1, add it
+                                owner.attributes[key] = o.attributes[key];
+                            }
+                        });
+
+                    } else if(o) {
+                        owner = o;
+                    }
+                    // console.log("owner",owner)
                 }
-                // console.log("owner",owner)
+                // let owner = owners.find((o) => {
+                //     // return owner.address.toLowerCase() === user[0].wallet.toLowerCase()
+                //     return user.some((u) => {
+                //         return o.address.toLowerCase() === u.wallet.toLowerCase();
+                //     });
+                // })
+
+                // console.log('setRolesForUser', owner)
+
+                setUserRole(role, userId, owner).catch((e) => {
+                    console.log(e)
+                })
             }
-            // let owner = owners.find((o) => {
-            //     // return owner.address.toLowerCase() === user[0].wallet.toLowerCase()
-            //     return user.some((u) => {
-            //         return o.address.toLowerCase() === u.wallet.toLowerCase();
-            //     });
-            // })
-
-            // console.log('setRolesForUser', owner)
-
-            setUserRole(role, userId, owner).catch((e) => {
-                console.log(e)
-            })
+        } else {
+            for(let role of roles) {
+                setUserRole(role, userId, undefined).catch((e) => {
+                    console.log(e)
+                })
+            }
         }
-    } else {
-        for(let role of roles) {
-            setUserRole(role, userId, undefined).catch((e) => {
-                console.log(e)
-            })
-        }
+    } catch (e) {
+        console.log("Error setRoleForUser")
+        console.log(e)
     }
 }
 
 async function setRoleForUser(userId, guildId, roleId) {
-    let role = await database.getGuildRole(roleId)
-    let user = await database.getUserInGuild(guildId, userId)
-    if(user[0]) {
-        let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
-        let res = await axios.get(url, {
-            headers: { 'User-Agent':'OT ThetaGuard Bot' }
-        }).catch((e) => {console.log(e)})
-        let owners = res.data.owners
-        for(let owner of owners) {
-            if(owner.address === wallet.toLowerCase()) {
-                setUserRole(role, userId, owner).catch((e) => {console.log(e)})
+    try {
+        let role = await database.getGuildRole(roleId)
+        let user = await database.getUserInGuild(guildId, userId)
+        if(user[0]) {
+            let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
+            let res = await axios.get(url, {
+                headers: { 'User-Agent':'OT ThetaGuard Bot' }
+            }).catch((e) => {console.log(e)})
+            let owners = res.data.owners
+            for(let owner of owners) {
+                if(owner.address === wallet.toLowerCase()) {
+                    setUserRole(role, userId, owner).catch((e) => {console.log(e)})
+                }
             }
+        } else {
+            setUserRole(role, userId, undefined).catch((e) => {console.log(e)})
         }
-    } else {
-        setUserRole(role, userId, undefined).catch((e) => {console.log(e)})
+    } catch (e) {
+        console.log("Error setRoleForUser")
+        console.log(e)
     }
 }
 
@@ -479,94 +524,103 @@ async function setGuildRolesForUsersByContract(contract, guildId) {
 // }
 
 async function setRoleForGuildUsers(guildId, roleId) {
-    let users = await database.getUsersInGuild(guildId)
-    let formattedUsers = []
-    users.forEach(user => {
-        let existingUser = formattedUsers.find(u => u.userId === user.userId);
+    try {
+        let users = await database.getUsersInGuild(guildId)
+        let formattedUsers = []
+        users.forEach(user => {
+            let existingUser = formattedUsers.find(u => u.userId === user.userId);
 
-        if (existingUser) {
-            existingUser.wallets.push(user.wallet);
-        } else {
-            formattedUsers.push({
-                id: user.id,
-                userId: user.userId,
-                guildId: user.guildId,
-                wallets: [user.wallet]
-            });
-        }
-    });
-    let role = await database.getGuildRole(roleId)
-    let guild = await global.client.guilds.cache.get(guildId)
-    await guild.members.fetch()
-    let membersWithRole = guild.roles.cache.get(roleId).members.map(m=>m.user);
-    let discordRole = await guild.roles.cache.get(roleId)
-    if(role[0]) {
-        let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
-        let res = await axios.get(url, {
-            headers: { 'User-Agent':'OT ThetaGuard Bot' }
-        }).catch((e) => {console.log("Error",e)})
-        let owners = res.data.owners
+            if (existingUser) {
+                existingUser.wallets.push(user.wallet);
+            } else {
+                formattedUsers.push({
+                    id: user.id,
+                    userId: user.userId,
+                    guildId: user.guildId,
+                    wallets: [user.wallet]
+                });
+            }
+        });
+        let role = await database.getGuildRole(roleId)
+        let guild = await global.client.guilds.cache.get(guildId)
+        await guild.members.fetch()
+        let membersWithRole = guild.roles.cache.get(roleId).members.map(m=>m.user);
+        let discordRole = await guild.roles.cache.get(roleId)
+        if(role[0]) {
+            let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
+            let res = await axios.get(url, {
+                headers: { 'User-Agent':'OT ThetaGuard Bot' }
+            }).catch((e) => {console.log("Error",e)})
+            let owners = res.data.owners
 
-        // todo: Test if new code works
-        for(let user of formattedUsers) {
-            let owner;
-            for(let wallet of user.wallets) {
-                let o = owners.find((o) => {
-                    return o.address.toLowerCase() === wallet.toLowerCase()
-                })
-                if(owner && o) {
-                    owner.ownedAmount += o.ownedAmount
-                    Object.keys(o.attributes).forEach(key => {
-                        if (owner.attributes[key]) {
-                            // If the key exists in attributes1, merge the two arrays
-                            owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
-                        } else {
-                            // If the key does not exist in attributes1, add it
-                            owner.attributes[key] = o.attributes[key];
-                        }
-                    });
+            // todo: Test if new code works
+            for(let user of formattedUsers) {
+                let owner;
+                for(let wallet of user.wallets) {
+                    let o = owners.find((o) => {
+                        return o.address.toLowerCase() === wallet.toLowerCase()
+                    })
+                    if(owner && o) {
+                        owner.ownedAmount += o.ownedAmount
+                        Object.keys(o.attributes).forEach(key => {
+                            if (owner.attributes[key]) {
+                                // If the key exists in attributes1, merge the two arrays
+                                owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
+                            } else {
+                                // If the key does not exist in attributes1, add it
+                                owner.attributes[key] = o.attributes[key];
+                            }
+                        });
 
-                } else if (o){
-                    owner = o;
+                    } else if (o){
+                        owner = o;
+                    }
                 }
+                // let owner = owners.find((owner) => {
+                //     return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
+                // });
+                await setUserRole(role[0], user.userId, owner)
             }
-            // let owner = owners.find((owner) => {
-            //     return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
-            // });
-            await setUserRole(role[0], user.userId, owner)
+        } else {
+            users.forEach((user) => {
+                if(membersWithRole.find((member) => {return user.userId === member.id})) {
+                    guild.members.fetch(user.userId).then((member) => {
+                        member.roles.remove(discordRole)
+                    })
+                }
+            })
         }
-    } else {
-        users.forEach((user) => {
-            if(membersWithRole.find((member) => {return user.userId === member.id})) {
-                guild.members.fetch(user.userId).then((member) => {
-                    member.roles.remove(discordRole)
-                })
-            }
-        })
+    } catch (e) {
+        console.log("Error setRoleForGuildUsers")
+        console.log(e)
     }
 }
 
 async function setRolesForUsers(rolesToCheck) {
-    // console.log(rolesToCheck)
-    const keys = Object.keys(rolesToCheck);
-    for(let key of keys) {
-        // console.log(rolesToCheck[key].users)
-        let role = rolesToCheck[key]
-        let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
-        let res = await axios.get(url, {
-            headers: { 'User-Agent':'OT ThetaGuard Bot' }
-        }).catch((e) => {console.log("Error",e)})
-        let owners = res.data.owners
-        for(let user of rolesToCheck[key].users) {
-            // let owner = owners.find((owner) => {
-            //     return owner.address === user.wallet.toLowerCase()
-            // })
-            let owner = owners.find((owner) => {
-                return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
-            });
-            // console.log(role, user.userId, owner)
-            await setUserRole(role, user.userId, owner)
+    try {
+        const keys = Object.keys(rolesToCheck);
+        for(let key of keys) {
+            // console.log(rolesToCheck[key].users)
+            let role = rolesToCheck[key]
+            let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
+            let res = await axios.get(url, {
+                headers: { 'User-Agent':'OT ThetaGuard Bot' }
+            }).catch((e) => {console.log("Error",e)})
+            let owners = res.data.owners
+            for(let user of rolesToCheck[key].users) {
+                // let owner = owners.find((owner) => {
+                //     return owner.address === user.wallet.toLowerCase()
+                // })
+                let owner = owners.find((owner) => {
+                    return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
+                });
+                // console.log(role, user.userId, owner)
+                await setUserRole(role, user.userId, owner)
+            }
         }
+    } catch (e) {
+        console.log("Error setRolesForUsers")
+        console.log(e)
     }
 }
 

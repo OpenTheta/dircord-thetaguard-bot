@@ -23,6 +23,7 @@ module.exports = {
     getGuildRolesByContract,
     getUserInGuild,
     getGuilds,
+    getGuild
 }
 
 // interact with projects table
@@ -160,4 +161,8 @@ function getUsersInGuild(guildId) {
 
 function getUserInGuild(guildId, userId) {
     return db("users").where({guildId: guildId, userId: userId})
+}
+
+function getGuild(guildId) {
+    return db("guilds").where({guildId: guildId})
 }

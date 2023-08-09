@@ -75,6 +75,7 @@ server.get("/:requestId", async (req, res) => {
 server.post("/signed", async (req, res) => {
     try {
         let data = req.body;
+        console.log(USER_REQUESTS[data.requestId])
         const signerAddr = ethers.verifyMessage(
             USER_REQUESTS[data.requestId].message,
             data.signature
