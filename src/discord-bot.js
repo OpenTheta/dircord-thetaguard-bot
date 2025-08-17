@@ -23,90 +23,95 @@ module.exports = {
 
 // Create new channels in a new Guild (thetaguard-verify)
 async function newGuild(client, guildId) {
-    let guild = await client.guilds.fetch(guildId)
-    // create admin channel
-    let channel1 =  await guild.channels.create({ //Create a channel
-        name: 'thetaguard-config',
-        type: ChannelType.GuildText, //Make sure the channel is a text channel
-        permissionOverwrites: [
-            {
-                id: guild.id,
-                deny: [PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory],
-            },
-        ],
-    })
+    try {
+        console.log("Create new guild", guildId)
+        let guild = await client.guilds.fetch(guildId)
+        // create admin channel
+        let channel1 =  await guild.channels.create({ //Create a channel
+            name: 'thetaguard-config',
+            type: ChannelType.GuildText, //Make sure the channel is a text channel
+            permissionOverwrites: [
+                {
+                    id: guild.id,
+                    deny: [PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory],
+                },
+            ],
+        })
 
-    const row1 = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setLabel("Setup Roles!")
-                .setCustomId('setupRoles')
-                .setStyle('Primary')
-        ).addComponents(
-            new ButtonBuilder()
-                .setLabel('Docs')
-                .setStyle('Link')
-                .setURL("https://opentheta.io")
-        );
+        const row1 = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setLabel("Setup Roles!")
+                    .setCustomId('setupRoles')
+                    .setStyle('Primary')
+            ).addComponents(
+                new ButtonBuilder()
+                    .setLabel('Docs')
+                    .setStyle('Link')
+                    .setURL("https://opentheta.io")
+            );
 
-    await channel1.send({
-        embeds: [
-            new EmbedBuilder()
-                .setThumbnail(LOGO_URL)
-                .setTitle("Setup Your Guild Roles")
-                .setColor('#0F52BA')
-                .setDescription("** Keep this channel private, because everyone that has access can setup new roles!\n" +
-                    "1. Create the Roles that you want to connect to tokens\n" +
-                    "2. Follow the link below to setup the rules for each role\n\n" +
-                    "You can set:\n" +
-                    "- NFT contract\n" +
-                    "- Amount of tokens (min & max)\n" +
-                    "- Trait that the NFT needs to have")
-        ],
-        components: [row1]
-    })
+        await channel1.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setThumbnail(LOGO_URL)
+                    .setTitle("Setup Your Guild Roles")
+                    .setColor('#0F52BA')
+                    .setDescription("** Keep this channel private, because everyone that has access can setup new roles!\n" +
+                        "1. Create the Roles that you want to connect to tokens\n" +
+                        "2. Follow the link below to setup the rules for each role\n\n" +
+                        "You can set:\n" +
+                        "- NFT contract\n" +
+                        "- Amount of tokens (min & max)\n" +
+                        "- Trait that the NFT needs to have")
+            ],
+            components: [row1]
+        })
 
-    //create Public verify channel
-    let channel2 =  await guild.channels.create({ //Create a channel
-        name: 'thetaguard-verify',
-        type: ChannelType.GuildText, //Make sure the channel is a text channel
-        permissionOverwrites: [
-            {
-                id: guild.id,
-                deny: [PermissionsBitField.Flags.SendMessages],
-            }
-        ],
-    })
-    const row2 = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setLabel("Let's Go!")
-                .setCustomId('letsgo')
-                .setStyle('Primary')
-        ).addComponents(
-            new ButtonBuilder()
-                .setLabel('Docs')
-                .setStyle('Link')
-                .setURL("https://opentheta.io")
-        );
+        //create Public verify channel
+        let channel2 =  await guild.channels.create({ //Create a channel
+            name: 'thetaguard-verify',
+            type: ChannelType.GuildText, //Make sure the channel is a text channel
+            permissionOverwrites: [
+                {
+                    id: guild.id,
+                    deny: [PermissionsBitField.Flags.SendMessages],
+                }
+            ],
+        })
+        const row2 = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setLabel("Let's Go!")
+                    .setCustomId('letsgo')
+                    .setStyle('Primary')
+            ).addComponents(
+                new ButtonBuilder()
+                    .setLabel('Docs')
+                    .setStyle('Link')
+                    .setURL("https://opentheta.io")
+            );
 
-    await channel2.send({
-        embeds: [
-            new EmbedBuilder()
-                .setThumbnail(LOGO_URL)
-                .setTitle("Verify your Assets")
-                .setColor('#0F52BA')
-                .setDescription("This is a read-only connection. Do not share your private keys. We will never ask for your seed phrase or DM you.")
-        ],
-        components: [row2]
-    })
-    let guildData = {
-        guildId: guildId,
-        verifyChannelId: channel2.id,
-        configChannelId: channel1.id
+        await channel2.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setThumbnail(LOGO_URL)
+                    .setTitle("Verify your Assets")
+                    .setColor('#0F52BA')
+                    .setDescription("This is a read-only connection. Do not share your private keys. We will never ask for your seed phrase or DM you.")
+            ],
+            components: [row2]
+        })
+        let guildData = {
+            guildId: guildId,
+            verifyChannelId: channel2.id,
+            configChannelId: channel1.id
+        }
+
+        await database.addGuild(guildData).catch(e => {console.log(e)})
+    } catch (e) {
+        console.log("Error adding new Guild", e)
     }
-
-    await database.addGuild(guildData).catch(e => {console.log(e)})
 }
 
 // reload the message of the private channel
