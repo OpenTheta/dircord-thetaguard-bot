@@ -1,6 +1,6 @@
 **/.DS_Store
 .idea/
-.db/
+db/
 
 # Logs
 logs
