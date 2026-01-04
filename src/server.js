@@ -4,8 +4,6 @@ const { checkAllExpiredRequests, removeExpiredRequests, setRoleForGuildUsers, se
 const { USER_REQUESTS, ADMIN_REQUESTS } = require("./Config");
 const bodyParser = require("body-parser");
 const { ethers } = require("ethers");
-const https = require("https");
-const fs = require('fs');
 
 // server setup
 const server = express();
@@ -20,19 +18,6 @@ server.use(function (req, res, next) {
     );
     next();
 });
-
-// Certificate
-const privateKey = fs.readFileSync('/etc/letsencrypt/live/opentheta.de/privkey.pem', 'utf8');
-const certificate = fs.readFileSync('/etc/letsencrypt/live/opentheta.de/cert.pem', 'utf8');
-const ca = fs.readFileSync('/etc/letsencrypt/live/opentheta.de/chain.pem', 'utf8');
-
-const credentials = {
-    key: privateKey,
-    cert: certificate,
-    ca: ca
-};
-
-const serverHttps = https.createServer(credentials, server);
 
 const handleErrors = (res, error, message) => {
     console.log("Error:", error);
@@ -270,8 +255,7 @@ server.post('/deleterole', async (req, res) => {
 
 
 module.exports = {
-    server,
-    serverHttps
+    server
 }
 
 // server.get('/:requestId', async (req, res) => {
