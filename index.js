@@ -1,5 +1,6 @@
 // Start express server
 // const express = require("express")
+require("dotenv").config();
 const fs = require('fs');
 // const http = require('http');
 // const https = require('https');
@@ -15,8 +16,7 @@ const {setupRolesButton, letsGoButton, newGuild, resendMessage} = require("./src
 // const server = http.createServer(app);
 
 
-// const PORT = 5001;
-const PORT = 80;
+const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => console.log("server is running on port "+PORT));
 serverHttps.listen(443, () => {
     console.log('HTTPS Server running on port 443');
