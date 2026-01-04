@@ -322,172 +322,318 @@ function generateString(length) {
 async function setRolesForUser(userId, guildId) {
     try {
         let roles = await database.getGuildRoles(guildId)
+        if (!roles || !Array.isArray(roles)) {
+            console.warn(`[setRolesForUser] No roles found for guildId=${guildId}, userId=${userId}`)
+            return
+        }
+        
         let user = await database.getUserInGuild(guildId, userId)
-        // console.log(user)
         if(user[0]) {
             for(let role of roles) {
-                // console.log(role)
-                let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
-                let res = await axios.get(url, {
-                    headers: {'User-Agent': 'OT ThetaGuard Bot'}
-                }).catch((e) => {
-                    console.log(e)
-                })
-                // console.log(url)
-                let owners = res.data.owners
-
-                // todo: test if new code works
-                // console.log("user length:",user.length)
-                let owner;
-                for(let i=0; i<user.length; i++) {
-                    let o = owners.find((o) => {
-                        return o.address.toLowerCase() === user[i].wallet.toLowerCase()
-                    })
-                    console.log(o)
-                    if(owner && o) {
-                        owner.ownedAmount += o.ownedAmount
-                        Object.keys(o.attributes).forEach(key => {
-                            if (owner.attributes[key]) {
-                                // If the key exists in attributes1, merge the two arrays
-                                owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
-                            } else {
-                                // If the key does not exist in attributes1, add it
-                                owner.attributes[key] = o.attributes[key];
-                            }
-                        });
-
-                    } else if(o) {
-                        owner = o;
+                try {
+                    if (!role || !role.contract) {
+                        console.warn(`[setRolesForUser] Invalid role data: roleId=${role?.roleId}, guildId=${guildId}, userId=${userId}`)
+                        continue
                     }
-                    // console.log("owner",owner)
+                    
+                    let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
+                    let res = await axios.get(url, {
+                        headers: {'User-Agent': 'OT ThetaGuard Bot'}
+                    }).catch((e) => {
+                        console.error(`[setRolesForUser] API error: roleId=${role.roleId}, guildId=${guildId}, userId=${userId}, url=${url}`, e)
+                        return null
+                    })
+                    
+                    if (!res || !res.data || !res.data.owners) {
+                        console.warn(`[setRolesForUser] Invalid API response: roleId=${role.roleId}, guildId=${guildId}, userId=${userId}`)
+                        await setUserRole(role, userId, undefined).catch((e) => {
+                            console.error(`[setRolesForUser] Error setting role to undefined: roleId=${role.roleId}, guildId=${guildId}, userId=${userId}`, e)
+                        })
+                        continue
+                    }
+                    
+                    let owners = res.data.owners
+                    if (!Array.isArray(owners)) {
+                        console.warn(`[setRolesForUser] Owners is not an array: roleId=${role.roleId}, guildId=${guildId}, userId=${userId}`)
+                        await setUserRole(role, userId, undefined).catch((e) => {
+                            console.error(`[setRolesForUser] Error setting role to undefined: roleId=${role.roleId}, guildId=${guildId}, userId=${userId}`, e)
+                        })
+                        continue
+                    }
+
+                    let owner;
+                    for(let i=0; i<user.length; i++) {
+                        if (!user[i] || !user[i].wallet) {
+                            continue
+                        }
+                        
+                        let o = owners.find((o) => {
+                            return o.address.toLowerCase() === user[i].wallet.toLowerCase()
+                        })
+                        
+                        if(owner && o) {
+                            owner.ownedAmount += o.ownedAmount
+                            Object.keys(o.attributes || {}).forEach(key => {
+                                if (owner.attributes[key]) {
+                                    // If the key exists in attributes1, merge the two arrays
+                                    owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
+                                } else {
+                                    // If the key does not exist in attributes1, add it
+                                    owner.attributes[key] = o.attributes[key];
+                                }
+                            });
+
+                        } else if(o) {
+                            owner = o;
+                        }
+                    }
+
+                    await setUserRole(role, userId, owner).catch((e) => {
+                        console.error(`[setRolesForUser] Error setting role: roleId=${role.roleId}, guildId=${guildId}, userId=${userId}`, e)
+                    })
+                } catch (roleError) {
+                    // Continue processing other roles even if one fails
+                    console.error(`[setRolesForUser] Error processing role: roleId=${role?.roleId}, guildId=${guildId}, userId=${userId}`, roleError)
                 }
-                // let owner = owners.find((o) => {
-                //     // return owner.address.toLowerCase() === user[0].wallet.toLowerCase()
-                //     return user.some((u) => {
-                //         return o.address.toLowerCase() === u.wallet.toLowerCase();
-                //     });
-                // })
-
-                // console.log('setRolesForUser', owner)
-
-                setUserRole(role, userId, owner).catch((e) => {
-                    console.log(e)
-                })
             }
         } else {
             for(let role of roles) {
-                setUserRole(role, userId, undefined).catch((e) => {
-                    console.log(e)
+                await setUserRole(role, userId, undefined).catch((e) => {
+                    console.error(`[setRolesForUser] Error setting role to undefined (user not found): roleId=${role?.roleId}, guildId=${guildId}, userId=${userId}`, e)
                 })
             }
         }
     } catch (e) {
-        console.log("Error setRoleForUser")
-        console.log(e)
+        console.error(`[setRolesForUser] Unexpected error: guildId=${guildId}, userId=${userId}`, e)
     }
 }
 
 async function setRoleForUser(userId, guildId, roleId) {
     try {
         let role = await database.getGuildRole(roleId)
+        if (!role || !role[0]) {
+            console.warn(`[setRoleForUser] Role not found: roleId=${roleId}, userId=${userId}, guildId=${guildId}`)
+            return
+        }
+        
         let user = await database.getUserInGuild(guildId, userId)
         if(user[0]) {
-            let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
+            let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
             let res = await axios.get(url, {
                 headers: { 'User-Agent':'OT ThetaGuard Bot' }
-            }).catch((e) => {console.log(e)})
+            }).catch((e) => {
+                console.error(`[setRoleForUser] API error for userId=${userId}, guildId=${guildId}, roleId=${roleId}, url=${url}`, e)
+                return null
+            })
+            
+            if (!res || !res.data || !res.data.owners) {
+                console.warn(`[setRoleForUser] Invalid API response for userId=${userId}, guildId=${guildId}, roleId=${roleId}`)
+                await setUserRole(role[0], userId, undefined).catch((e) => {
+                    console.error(`[setRoleForUser] Error setting role to undefined: userId=${userId}, guildId=${guildId}, roleId=${roleId}`, e)
+                })
+                return
+            }
+            
             let owners = res.data.owners
+            let foundOwner = null
             for(let owner of owners) {
-                if(owner.address === wallet.toLowerCase()) {
-                    setUserRole(role, userId, owner).catch((e) => {console.log(e)})
+                if(owner.address.toLowerCase() === user[0].wallet.toLowerCase()) {
+                    foundOwner = owner
+                    break
                 }
             }
+            
+            if (foundOwner) {
+                await setUserRole(role[0], userId, foundOwner).catch((e) => {
+                    console.error(`[setRoleForUser] Error setting role: userId=${userId}, guildId=${guildId}, roleId=${roleId}`, e)
+                })
+            } else {
+                await setUserRole(role[0], userId, undefined).catch((e) => {
+                    console.error(`[setRoleForUser] Error setting role to undefined (owner not found): userId=${userId}, guildId=${guildId}, roleId=${roleId}`, e)
+                })
+            }
         } else {
-            setUserRole(role, userId, undefined).catch((e) => {console.log(e)})
+            await setUserRole(role[0], userId, undefined).catch((e) => {
+                console.error(`[setRoleForUser] Error setting role to undefined (user not found): userId=${userId}, guildId=${guildId}, roleId=${roleId}`, e)
+            })
         }
     } catch (e) {
-        console.log("Error setRoleForUser")
-        console.log(e)
+        console.error(`[setRoleForUser] Unexpected error: userId=${userId}, guildId=${guildId}, roleId=${roleId}`, e)
     }
 }
 
 async function setUserRole(role, userId, userData) {
-    console.log(role, userId, userData)
-    let guild = await global.client.guilds.cache.get(role.guildId)
-    let discordRole = await guild.roles.cache.get(role.roleId)
-    let member = await guild.members.fetch(userId);
-    if (userData && userData.ownedAmount >= role.min_amount && (role.max_amount === null || userData.ownedAmount <= role.max_amount)) {
-        // check if specific trait is set
-        if (role.trait_type && role.trait_value) {
-            if (userData.attributes && userData.attributes[role.trait_type]) {
-                const traitOccurrences = userData.attributes[role.trait_type].filter(value => value === role.trait_value).length;
+    try {
+        console.log(`[setUserRole] Processing role ${role.roleId} for user ${userId} in guild ${role.guildId}`, { userData: userData ? { ownedAmount: userData.ownedAmount } : null })
+        
+        // Validate guild exists
+        let guild = await global.client.guilds.cache.get(role.guildId)
+        if (!guild) {
+            console.warn(`[setUserRole] Guild not found: ${role.guildId} for user ${userId}, role ${role.roleId}`)
+            return
+        }
 
-                if (traitOccurrences >= role.min_amount && (role.max_amount === null || traitOccurrences <= role.max_amount)) {
-                    if (!member.roles.cache.has(discordRole.id)) {
-                        console.log("role added (traits)")
-                        await member.roles.add(discordRole)
+        // Validate role exists
+        let discordRole = await guild.roles.cache.get(role.roleId)
+        if (!discordRole) {
+            console.warn(`[setUserRole] Role not found: ${role.roleId} in guild ${role.guildId} for user ${userId}`)
+            return
+        }
+
+        // Fetch member with error handling for users who left the guild
+        let member
+        try {
+            member = await guild.members.fetch(userId)
+        } catch (error) {
+            if (error.code === 10007) {
+                // Unknown Member - user has left the guild
+                console.warn(`[setUserRole] Member not found (likely left guild): userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`)
+                return
+            }
+            // Re-throw other errors
+            throw error
+        }
+
+        if (userData && userData.ownedAmount >= role.min_amount && (role.max_amount === null || userData.ownedAmount <= role.max_amount)) {
+            // check if specific trait is set
+            if (role.trait_type && role.trait_value) {
+                if (userData.attributes && userData.attributes[role.trait_type]) {
+                    const traitOccurrences = userData.attributes[role.trait_type].filter(value => value === role.trait_value).length;
+
+                    if (traitOccurrences >= role.min_amount && (role.max_amount === null || traitOccurrences <= role.max_amount)) {
+                        if (!member.roles.cache.has(discordRole.id)) {
+                            console.log(`[setUserRole] Role added (traits): userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`)
+                            await member.roles.add(discordRole)
+                        }
+                    } else {
+                        if (member.roles.cache.has(discordRole.id)) {
+                            console.log(`[setUserRole] Role removed (traits, but not enough): userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`)
+                            await member.roles.remove(discordRole)
+                        }
                     }
                 } else {
                     if (member.roles.cache.has(discordRole.id)) {
-                        console.log("role removed (traits, but not enough)")
+                        console.log(`[setUserRole] Role removed (traits, but user data does not have right one): userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`)
                         await member.roles.remove(discordRole)
                     }
                 }
             } else {
-                if (member.roles.cache.has(discordRole.id)) {
-                    console.log("role removed (traits, but user data does not have right one)")
-                    await member.roles.remove(discordRole)
+                // no traits are set, give role if user does not already have it
+                if (!member.roles.cache.has(discordRole.id)) {
+                    console.log(`[setUserRole] Role added (no traits): userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`)
+                    await member.roles.add(discordRole)
                 }
             }
         } else {
-            // no traits are set, give role if user does not already have it
-            if (!member.roles.cache.has(discordRole.id)) {
-                console.log("role added (no traits)")
-                await member.roles.add(discordRole)
+            // Take role away if user has a role but is not eligible
+            if (member.roles.cache.has(discordRole.id)) {
+                console.log(`[setUserRole] Role removed (not eligible): userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`)
+                await member.roles.remove(discordRole)
             }
         }
-    } else {
-        // Take role away if user has a role but is not eligible
-        if (member.roles.cache.has(discordRole.id)) {
-            console.log("role removed (no traits)")
-            await member.roles.remove(discordRole)
-        }
+    } catch (error) {
+        console.error(`[setUserRole] Error setting role: userId=${userId}, guildId=${role?.guildId}, roleId=${role?.roleId}`, error)
+        throw error
     }
 }
 
 
 
 async function setGuildRolesForUsersByContract(contract, guildId) {
-    // let guild = await global.client.guilds.cache.get(guildId)
-
-    let url_includeMarket = `https://api.opentheta.io/v1/contracts/${contract}/attributes?includeForSale=true`
-    let url_excludeMarket = `https://api.opentheta.io/v1/contracts/${contract}/attributes?includeForSale=false`
-    let res_includeMarket = await axios.get(url_includeMarket, {
-        headers: { 'User-Agent':'OT ThetaGuard Bot' }
-    }).catch((e) => {console.log(e)})
-    let res_excludeMarket = await axios.get(url_excludeMarket, {
-        headers: { 'User-Agent':'OT ThetaGuard Bot' }
-    }).catch((e) => {console.log(e)})
-
-    let roles = await database.getGuildRolesByContract(guildId, contract)
-    roles.forEach((role) => {
-        let owners
-        if(role.include_market) {
-            owners = res_includeMarket.data.owners
-        } else {
-            owners = res_excludeMarket.data.owners
+    try {
+        if (!contract || !guildId) {
+            console.warn(`[setGuildRolesForUsersByContract] Missing parameters: contract=${contract}, guildId=${guildId}`)
+            return
         }
-        owners.forEach(async (owner) => {
-            let wallet = await database.getWalletUser(owner.wallet)
-            if(wallet.userId) {
-                let user = await database.getUserGuild(wallet.userId, guildId)
-                if(user[0]) {
-                    setUserRole(role, wallet.userId, owner).catch((e) => {console.log(e)})
-                }
-            }
+
+        let url_includeMarket = `https://api.opentheta.io/v1/contracts/${contract}/attributes?includeForSale=true`
+        let url_excludeMarket = `https://api.opentheta.io/v1/contracts/${contract}/attributes?includeForSale=false`
+        
+        let res_includeMarket = await axios.get(url_includeMarket, {
+            headers: { 'User-Agent':'OT ThetaGuard Bot' }
+        }).catch((e) => {
+            console.error(`[setGuildRolesForUsersByContract] API error (includeMarket): contract=${contract}, guildId=${guildId}, url=${url_includeMarket}`, e)
+            return null
+        })
+        
+        let res_excludeMarket = await axios.get(url_excludeMarket, {
+            headers: { 'User-Agent':'OT ThetaGuard Bot' }
+        }).catch((e) => {
+            console.error(`[setGuildRolesForUsersByContract] API error (excludeMarket): contract=${contract}, guildId=${guildId}, url=${url_excludeMarket}`, e)
+            return null
         })
 
-    })
+        if (!res_includeMarket || !res_includeMarket.data || !res_includeMarket.data.owners) {
+            console.warn(`[setGuildRolesForUsersByContract] Invalid API response (includeMarket): contract=${contract}, guildId=${guildId}`)
+        }
+        
+        if (!res_excludeMarket || !res_excludeMarket.data || !res_excludeMarket.data.owners) {
+            console.warn(`[setGuildRolesForUsersByContract] Invalid API response (excludeMarket): contract=${contract}, guildId=${guildId}`)
+        }
+
+        let roles = await database.getGuildRolesByContract(guildId, contract)
+        if (!roles || !Array.isArray(roles)) {
+            console.warn(`[setGuildRolesForUsersByContract] No roles found: contract=${contract}, guildId=${guildId}`)
+            return
+        }
+        
+        for (let role of roles) {
+            try {
+                if (!role || !role.roleId) {
+                    console.warn(`[setGuildRolesForUsersByContract] Invalid role data: contract=${contract}, guildId=${guildId}`)
+                    continue
+                }
+                
+                let owners
+                if(role.include_market) {
+                    if (!res_includeMarket || !res_includeMarket.data || !res_includeMarket.data.owners) {
+                        console.warn(`[setGuildRolesForUsersByContract] Skipping role (no includeMarket data): roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`)
+                        continue
+                    }
+                    owners = res_includeMarket.data.owners
+                } else {
+                    if (!res_excludeMarket || !res_excludeMarket.data || !res_excludeMarket.data.owners) {
+                        console.warn(`[setGuildRolesForUsersByContract] Skipping role (no excludeMarket data): roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`)
+                        continue
+                    }
+                    owners = res_excludeMarket.data.owners
+                }
+                
+                if (!Array.isArray(owners)) {
+                    console.warn(`[setGuildRolesForUsersByContract] Owners is not an array: roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`)
+                    continue
+                }
+                
+                for (let owner of owners) {
+                    try {
+                        if (!owner || !owner.wallet) {
+                            continue
+                        }
+                        
+                        let wallet = await database.getWalletUser(owner.wallet)
+                        if (!wallet || !Array.isArray(wallet) || !wallet[0] || !wallet[0].userId) {
+                            continue
+                        }
+                        
+                        let user = await database.getUserGuild(wallet[0].userId, guildId)
+                        if(user && user[0]) {
+                            await setUserRole(role, wallet[0].userId, owner).catch((e) => {
+                                console.error(`[setGuildRolesForUsersByContract] Error setting role: userId=${wallet[0].userId}, roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`, e)
+                            })
+                        }
+                    } catch (ownerError) {
+                        // Continue processing other owners even if one fails
+                        console.error(`[setGuildRolesForUsersByContract] Error processing owner: roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`, ownerError)
+                    }
+                }
+            } catch (roleError) {
+                // Continue processing other roles even if one fails
+                console.error(`[setGuildRolesForUsersByContract] Error processing role: roleId=${role?.roleId}, contract=${contract}, guildId=${guildId}`, roleError)
+            }
+        }
+    } catch (e) {
+        console.error(`[setGuildRolesForUsersByContract] Unexpected error: contract=${contract}, guildId=${guildId}`, e)
+    }
 }
 
 // async function setRoleForGuildUsers(guildId, roleId) {
@@ -531,8 +677,17 @@ async function setGuildRolesForUsersByContract(contract, guildId) {
 async function setRoleForGuildUsers(guildId, roleId) {
     try {
         let users = await database.getUsersInGuild(guildId)
+        if (!users || !Array.isArray(users)) {
+            console.warn(`[setRoleForGuildUsers] No users found for guildId=${guildId}, roleId=${roleId}`)
+            return
+        }
+        
         let formattedUsers = []
         users.forEach(user => {
+            if (!user || !user.userId || !user.wallet) {
+                return
+            }
+            
             let existingUser = formattedUsers.find(u => u.userId === user.userId);
 
             if (existingUser) {
@@ -546,58 +701,113 @@ async function setRoleForGuildUsers(guildId, roleId) {
                 });
             }
         });
+        
         let role = await database.getGuildRole(roleId)
+        if (!role || !role[0]) {
+            console.warn(`[setRoleForGuildUsers] Role not found: roleId=${roleId}, guildId=${guildId}`)
+            return
+        }
+        
         let guild = await global.client.guilds.cache.get(guildId)
-        await guild.members.fetch()
-        let membersWithRole = guild.roles.cache.get(roleId).members.map(m=>m.user);
+        if (!guild) {
+            console.warn(`[setRoleForGuildUsers] Guild not found: guildId=${guildId}, roleId=${roleId}`)
+            return
+        }
+        
+        try {
+            await guild.members.fetch()
+        } catch (fetchError) {
+            console.error(`[setRoleForGuildUsers] Error fetching members: guildId=${guildId}, roleId=${roleId}`, fetchError)
+        }
+        
         let discordRole = await guild.roles.cache.get(roleId)
-        if(role[0]) {
+        if (!discordRole) {
+            console.warn(`[setRoleForGuildUsers] Discord role not found: roleId=${roleId}, guildId=${guildId}`)
+            return
+        }
+        
+        let membersWithRole = []
+        try {
+            membersWithRole = discordRole.members.map(m=>m.user);
+        } catch (roleError) {
+            console.warn(`[setRoleForGuildUsers] Error getting members with role: roleId=${roleId}, guildId=${guildId}`, roleError)
+        }
+        
+        if(role[0].contract) {
             let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
             let res = await axios.get(url, {
                 headers: { 'User-Agent':'OT ThetaGuard Bot' }
-            }).catch((e) => {console.log("Error",e)})
-            let owners = res.data.owners
-
-            // todo: Test if new code works
-            for(let user of formattedUsers) {
-                let owner;
-                for(let wallet of user.wallets) {
-                    let o = owners.find((o) => {
-                        return o.address.toLowerCase() === wallet.toLowerCase()
-                    })
-                    if(owner && o) {
-                        owner.ownedAmount += o.ownedAmount
-                        Object.keys(o.attributes).forEach(key => {
-                            if (owner.attributes[key]) {
-                                // If the key exists in attributes1, merge the two arrays
-                                owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
-                            } else {
-                                // If the key does not exist in attributes1, add it
-                                owner.attributes[key] = o.attributes[key];
-                            }
-                        });
-
-                    } else if (o){
-                        owner = o;
+            }).catch((e) => {
+                console.error(`[setRoleForGuildUsers] API error: roleId=${roleId}, guildId=${guildId}, url=${url}`, e)
+                return null
+            })
+            
+            if (!res || !res.data || !res.data.owners) {
+                console.warn(`[setRoleForGuildUsers] Invalid API response: roleId=${roleId}, guildId=${guildId}`)
+                // Still try to remove roles from users who shouldn't have them
+                for(let user of formattedUsers) {
+                    try {
+                        if(membersWithRole.find((member) => {return user.userId === member.id})) {
+                            await setUserRole(role[0], user.userId, undefined)
+                        }
+                    } catch (userError) {
+                        console.error(`[setRoleForGuildUsers] Error removing role from user: userId=${user?.userId}, roleId=${roleId}, guildId=${guildId}`, userError)
                     }
                 }
-                // let owner = owners.find((owner) => {
-                //     return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
-                // });
-                await setUserRole(role[0], user.userId, owner)
+                return
+            }
+            
+            let owners = res.data.owners
+            if (!Array.isArray(owners)) {
+                console.warn(`[setRoleForGuildUsers] Owners is not an array: roleId=${roleId}, guildId=${guildId}`)
+                return
+            }
+
+            for(let user of formattedUsers) {
+                try {
+                    let owner;
+                    for(let wallet of user.wallets) {
+                        if (!wallet) continue
+                        
+                        let o = owners.find((o) => {
+                            return o.address.toLowerCase() === wallet.toLowerCase()
+                        })
+                        if(owner && o) {
+                            owner.ownedAmount += o.ownedAmount
+                            Object.keys(o.attributes || {}).forEach(key => {
+                                if (owner.attributes[key]) {
+                                    // If the key exists in attributes1, merge the two arrays
+                                    owner.attributes[key] = [...owner.attributes[key], ...o.attributes[key]];
+                                } else {
+                                    // If the key does not exist in attributes1, add it
+                                    owner.attributes[key] = o.attributes[key];
+                                }
+                            });
+
+                        } else if (o){
+                            owner = o;
+                        }
+                    }
+                    await setUserRole(role[0], user.userId, owner)
+                } catch (userError) {
+                    // Continue processing other users even if one fails
+                    console.error(`[setRoleForGuildUsers] Error processing user: userId=${user?.userId}, roleId=${roleId}, guildId=${guildId}`, userError)
+                }
             }
         } else {
-            users.forEach((user) => {
-                if(membersWithRole.find((member) => {return user.userId === member.id})) {
-                    guild.members.fetch(user.userId).then((member) => {
-                        member.roles.remove(discordRole)
-                    })
+            // Role has no contract, remove from all users who have it
+            for(let user of formattedUsers) {
+                try {
+                    if(membersWithRole.find((member) => {return user.userId === member.id})) {
+                        await setUserRole(role[0], user.userId, undefined)
+                    }
+                } catch (userError) {
+                    console.error(`[setRoleForGuildUsers] Error removing role from user: userId=${user?.userId}, roleId=${roleId}, guildId=${guildId}`, userError)
                 }
-            })
+            }
         }
     } catch (e) {
-        console.log("Error setRoleForGuildUsers")
-        console.log(e)
+        console.error(`[setRoleForGuildUsers] Unexpected error: guildId=${guildId}, roleId=${roleId}`, e)
     }
 }
 
@@ -605,27 +815,57 @@ async function setRolesForUsers(rolesToCheck) {
     try {
         const keys = Object.keys(rolesToCheck);
         for(let key of keys) {
-            // console.log(rolesToCheck[key].users)
             let role = rolesToCheck[key]
+            if (!role || !role.contract) {
+                console.warn(`[setRolesForUsers] Invalid role data for roleId=${key}`)
+                continue
+            }
+            
             let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
             let res = await axios.get(url, {
                 headers: { 'User-Agent':'OT ThetaGuard Bot' }
-            }).catch((e) => {console.log("Error",e)})
+            }).catch((e) => {
+                console.error(`[setRolesForUsers] API error for roleId=${key}, guildId=${role.guildId}, url=${url}`, e)
+                return null
+            })
+            
+            if (!res || !res.data || !res.data.owners) {
+                console.warn(`[setRolesForUsers] Invalid API response for roleId=${key}, guildId=${role.guildId}`)
+                // Continue processing other roles even if this one fails
+                continue
+            }
+            
             let owners = res.data.owners
-            for(let user of rolesToCheck[key].users) {
-                // let owner = owners.find((owner) => {
-                //     return owner.address === user.wallet.toLowerCase()
-                // })
-                let owner = owners.find((owner) => {
-                    return user.wallets.some(wallet => owner.address === wallet.toLowerCase());
-                });
-                // console.log(role, user.userId, owner)
-                await setUserRole(role, user.userId, owner)
+            if (!Array.isArray(owners)) {
+                console.warn(`[setRolesForUsers] Owners is not an array for roleId=${key}, guildId=${role.guildId}`)
+                continue
+            }
+            
+            if (!role.users || !Array.isArray(role.users)) {
+                console.warn(`[setRolesForUsers] No users array for roleId=${key}, guildId=${role.guildId}`)
+                continue
+            }
+            
+            for(let user of role.users) {
+                try {
+                    if (!user || !user.userId || !user.wallets) {
+                        console.warn(`[setRolesForUsers] Invalid user data for roleId=${key}, guildId=${role.guildId}`)
+                        continue
+                    }
+                    
+                    let owner = owners.find((owner) => {
+                        return user.wallets.some(wallet => owner.address.toLowerCase() === wallet.toLowerCase());
+                    });
+                    
+                    await setUserRole(role, user.userId, owner)
+                } catch (userError) {
+                    // Continue processing other users even if one fails
+                    console.error(`[setRolesForUsers] Error processing user: userId=${user?.userId}, roleId=${key}, guildId=${role.guildId}`, userError)
+                }
             }
         }
     } catch (e) {
-        console.log("Error setRolesForUsers")
-        console.log(e)
+        console.error(`[setRolesForUsers] Unexpected error`, e)
     }
 }
 
