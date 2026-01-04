@@ -4,7 +4,7 @@ require("dotenv").config();
 const fs = require('fs');
 // const http = require('http');
 // const https = require('https');
-const {server, serverHttps} = require("./src/server");
+const {server} = require("./src/server");
 // const {USER_REQUESTS, ADMIN_REQUESTS} = require('./src/Config')
 const {Client, GatewayIntentBits} = require("discord.js");
 const {backendTracking, interval} = require("./src/backend");
@@ -18,9 +18,6 @@ const {setupRolesButton, letsGoButton, newGuild, resendMessage} = require("./src
 
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => console.log("server is running on port "+PORT));
-serverHttps.listen(443, () => {
-    console.log('HTTPS Server running on port 443');
-});
 
 
 // Start Discord Bot
