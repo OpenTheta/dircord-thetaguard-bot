@@ -2,7 +2,7 @@ const axios = require('axios')
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, ChannelType, time} = require("discord.js")
 require("dotenv").config();
 const wait = require('node:timers/promises').setTimeout;
-const {FOOTER_TEXT, DESCRIPTION, LOGO_URL, VERIFY_BASE_URL, USER_REQUESTS, ADMIN_REQUESTS} = require('./Config')
+const {FOOTER_TEXT, DESCRIPTION, LOGO_URL, VERIFY_BASE_URL, USER_REQUESTS, ADMIN_REQUESTS, API_BASE_URL} = require('./Config')
 const database = require("../models/dbHelpers");
 const {ethers} = require("ethers");
 require("dotenv").config();
@@ -336,7 +336,7 @@ async function setRolesForUser(userId, guildId) {
                         continue
                     }
                     
-                    let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
+                    let url = `${API_BASE_URL}contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
                     let res = await axios.get(url, {
                         headers: {'User-Agent': 'OT ThetaGuard Bot'}
                     }).catch((e) => {
@@ -418,7 +418,7 @@ async function setRoleForUser(userId, guildId, roleId) {
         
         let user = await database.getUserInGuild(guildId, userId)
         if(user[0]) {
-            let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
+            let url = `${API_BASE_URL}contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
             let res = await axios.get(url, {
                 headers: { 'User-Agent':'OT ThetaGuard Bot' }
             }).catch((e) => {
@@ -546,8 +546,8 @@ async function setGuildRolesForUsersByContract(contract, guildId) {
             return
         }
 
-        let url_includeMarket = `https://api.opentheta.io/v1/contracts/${contract}/attributes?includeForSale=true`
-        let url_excludeMarket = `https://api.opentheta.io/v1/contracts/${contract}/attributes?includeForSale=false`
+        let url_includeMarket = `${API_BASE_URL}contracts/${contract}/attributes?includeForSale=true`
+        let url_excludeMarket = `${API_BASE_URL}contracts/${contract}/attributes?includeForSale=false`
         
         let res_includeMarket = await axios.get(url_includeMarket, {
             headers: { 'User-Agent':'OT ThetaGuard Bot' }
@@ -734,7 +734,7 @@ async function setRoleForGuildUsers(guildId, roleId) {
         }
         
         if(role[0].contract) {
-            let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
+            let url = `${API_BASE_URL}contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
             let res = await axios.get(url, {
                 headers: { 'User-Agent':'OT ThetaGuard Bot' }
             }).catch((e) => {
@@ -821,7 +821,7 @@ async function setRolesForUsers(rolesToCheck) {
                 continue
             }
             
-            let url = `https://api.opentheta.io/v1/contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
+            let url = `${API_BASE_URL}contracts/${role.contract}/attributes?includeForSale=${Boolean(role.include_market)}`
             let res = await axios.get(url, {
                 headers: { 'User-Agent':'OT ThetaGuard Bot' }
             }).catch((e) => {
