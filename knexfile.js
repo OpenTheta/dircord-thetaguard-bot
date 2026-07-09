@@ -8,7 +8,7 @@ module.exports = {
   development: {
     client: 'sqlite3',
     connection: {
-      filename: './db/ThetaGuard.db'
+      filename: process.env.DB_FILE || './db/ThetaGuard.db'
     },
     pool: {
       afterCreate: (conn, done) => {
