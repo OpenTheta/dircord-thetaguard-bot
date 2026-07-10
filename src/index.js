@@ -2,6 +2,7 @@
 // starts the HTTP API and the Discord bot.
 const { loadConfig } = require('./config');
 const { createDb } = require('./db/knex');
+const { migrateDb } = require('./db/migrate');
 const { createRepositories } = require('./db/repositories');
 const { createRequestStore } = require('./services/requestStore');
 const { createOpenThetaApi } = require('./services/openTheta');
@@ -12,12 +13,18 @@ const { registerBotEvents } = require('./bot/events');
 const { createFullSync } = require('./jobs/fullSync');
 const { createApp } = require('./api/app');
 
-function main() {
+async function main() {
     const config = loadConfig();
 
     const db = createDb();
+    // Schema changes ship as additive knex migrations and run here, before
+    // anything can touch the database.
+    await migrateDb(db);
+
     const repos = createRepositories(db);
-    const requestStore = createRequestStore();
+    const requestStore = createRequestStore({ repo: repos.pendingRequests });
+    // Restore verification sessions that were in flight during the restart.
+    await requestStore.load();
     const openTheta = createOpenThetaApi({ baseUrl: config.apiBaseUrl });
 
     const client = createClient();
@@ -44,4 +51,7 @@ function main() {
     client.login(config.discordBotToken);
 }
 
-main();
+main().catch((e) => {
+    console.error('Fatal error during startup', e);
+    process.exit(1);
+});

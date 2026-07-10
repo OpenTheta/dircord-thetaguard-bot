@@ -7,9 +7,13 @@ if [ -f db/ThetaGuard.db ]; then
   mkdir -p db/backups
   BACKUP="db/backups/ThetaGuard-$(date +%Y%m%d-%H%M%S).db"
   cp db/ThetaGuard.db "$BACKUP"
+  # The database runs in WAL mode: recent writes live in the -wal file until
+  # checkpointed, so it must be backed up (and restored) together with the db.
+  [ -f db/ThetaGuard.db-wal ] && cp db/ThetaGuard.db-wal "$BACKUP-wal"
   echo "Database backed up to $BACKUP"
   # Keep the 20 most recent backups
   ls -1t db/backups/ThetaGuard-*.db 2>/dev/null | tail -n +21 | xargs -r rm --
+  ls -1t db/backups/ThetaGuard-*.db-wal 2>/dev/null | tail -n +21 | xargs -r rm --
 fi
 
 # Build the Docker image

@@ -1,6 +1,7 @@
 **/.DS_Store
 .idea/
-db/
+# the SQLite data volume (root only — src/db is source code)
+/db/
 
 # Logs
 logs

@@ -19,9 +19,12 @@ Data is stored in SQLite via knex (`db/ThetaGuard.db`).
 ```bash
 npm install
 cp .env.example .env   # then fill in DISCORD_BOT_TOKEN
-npx knex migrate:latest
 npm run dev            # local development (nodemon, auto-restart)
 ```
+
+Database migrations run automatically at startup (`npx knex migrate:latest`
+also works manually). A database that predates migration tracking is
+baselined automatically on first boot.
 
 Environment variables are documented in [`.env.example`](.env.example).
 
@@ -68,12 +71,18 @@ the environment.
 The production data lives in a single SQLite file on the `db/` volume:
 `db/ThetaGuard.db`.
 
-**Backup:** `docker-run.sh` automatically copies the file to
-`db/backups/ThetaGuard-<timestamp>.db` before every deploy (the 20 most
-recent backups are kept). A manual backup at any time:
+The database runs in WAL mode: recent writes live in `ThetaGuard.db-wal`
+until checkpointed, so the `-wal` file must always be copied together with
+the `.db` file (both directions).
+
+**Backup:** `docker-run.sh` automatically copies the file(s) to
+`db/backups/ThetaGuard-<timestamp>.db[-wal]` before every deploy (the 20
+most recent backups are kept). A manual backup at any time:
 
 ```bash
-cp db/ThetaGuard.db "db/backups/ThetaGuard-$(date +%Y%m%d-%H%M%S).db"
+STAMP=$(date +%Y%m%d-%H%M%S)
+cp db/ThetaGuard.db "db/backups/ThetaGuard-$STAMP.db"
+[ -f db/ThetaGuard.db-wal ] && cp db/ThetaGuard.db-wal "db/backups/ThetaGuard-$STAMP.db-wal"
 ```
 
 **Restore** (e.g. to roll back a bad deploy):
@@ -81,6 +90,8 @@ cp db/ThetaGuard.db "db/backups/ThetaGuard-$(date +%Y%m%d-%H%M%S).db"
 ```bash
 docker stop thetaguard-bot
 cp db/backups/ThetaGuard-<timestamp>.db db/ThetaGuard.db
+rm -f db/ThetaGuard.db-wal db/ThetaGuard.db-shm
+[ -f db/backups/ThetaGuard-<timestamp>.db-wal ] && cp db/backups/ThetaGuard-<timestamp>.db-wal db/ThetaGuard.db-wal
 docker start thetaguard-bot   # or re-run the previous image
 ```
 

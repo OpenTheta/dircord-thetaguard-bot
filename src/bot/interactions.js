@@ -26,7 +26,7 @@ function createInteractionHandlers({ requestStore, verifyBaseUrl }) {
 
         const session = sessionBasics(interaction);
         const requestId = generateRequestId();
-        requestStore.adminRequests[requestId] = session;
+        requestStore.addAdminRequest(requestId, session);
 
         await interaction.editReply(
             adminLinkReply(
@@ -50,7 +50,7 @@ function createInteractionHandlers({ requestStore, verifyBaseUrl }) {
             session.timestamp
         );
         const requestId = generateRequestId();
-        requestStore.userRequests[requestId] = session;
+        requestStore.addUserRequest(requestId, session);
 
         await interaction.editReply(
             verifyLinkReply(

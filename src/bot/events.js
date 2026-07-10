@@ -69,14 +69,9 @@ function registerBotEvents(client, { repos, requestStore, interactions, fullSync
 
     client.on('guildDelete', async (guild) => {
         console.log(`${client.user.username} was kicked from ${guild.id}.`);
+        // the FK cascade removes the guild's roles rows
         await repos.guilds.delete(guild.id);
         requestStore.deleteByGuild(guild.id);
-        // Explicit cleanup: the roles table's FK cascade is not active in the
-        // production database (see docs/IMPROVEMENT_PLAN.md, Phase 3).
-        const roles = await repos.roles.getByGuild(guild.id);
-        for (const role of roles) {
-            await repos.roles.delete(guild.id, role.roleId);
-        }
     });
 
     client.on('interactionCreate', (interaction) => {
