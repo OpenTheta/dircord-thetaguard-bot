@@ -6,35 +6,28 @@
 
 import {
     migrate,
-    createFakeClient,
+    buildTestApp,
     BOT_ROLE_POSITION,
     DISCORD_ROLES,
 } from '../helpers/setup.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
-import { createRequire } from 'node:module';
 
-// Load the app through Node's native require so the test and the server share
-// one module instance (vitest's transform pipeline would otherwise give the
-// test its own copy of Config.js and its ADMIN_REQUESTS map).
-const nativeRequire = createRequire(import.meta.url);
-const { server } = nativeRequire('../../src/server.js');
-const { db } = nativeRequire('../../models/dbHelpers.js');
-const { ADMIN_REQUESTS } = nativeRequire('../../src/Config.js');
+const { app: server, db, requestStore } = buildTestApp();
+const ADMIN_REQUESTS = requestStore.adminRequests;
 
 const GUILD_ID = 'guild-200';
 const ROLE_ID = 'discord-role-1';
 
-// What GET /myserver returns: roles below the bot's highest role, excluding
-// @everyone and bot-managed (tagged) roles.
+// The assignable roles every admin endpoint returns: roles below the bot's
+// highest role, excluding @everyone and bot-managed (tagged) roles. (Since
+// the Phase 2 restructure /newrole and /deleterole use the same
+// position-aware filter as GET /myserver — previously they also returned
+// roles the bot cannot assign.)
 const MYSERVER_ALL_ROLES = DISCORD_ROLES.filter(
     (r) => r.position < BOT_ROLE_POSITION && r.name !== '@everyone' && !r.tags
 );
-// What POST /newrole and /deleterole return: only @everyone and tagged roles
-// excluded (no position check).
-const MUTATION_ALL_ROLES = DISCORD_ROLES.filter(
-    (r) => !(r.name === '@everyone' || r.tags)
-);
+const MUTATION_ALL_ROLES = MYSERVER_ALL_ROLES;
 
 function makeAdminRequest(overrides = {}) {
     return {
@@ -66,7 +59,6 @@ const newRolePayload = {
 const storedRole = { ...newRolePayload, guildId: GUILD_ID };
 
 beforeAll(async () => {
-    global.client = createFakeClient();
     await migrate();
     await db('guilds').insert({
         guildId: GUILD_ID,

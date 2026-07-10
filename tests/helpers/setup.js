@@ -1,10 +1,8 @@
 // Test bootstrap for the API contract tests.
 //
-// Must be required BEFORE any application module: it points DB_FILE at a
-// fresh temp SQLite file so models/dbHelpers.js (which creates its knex
-// instance at require time) never touches ./db/ThetaGuard.db, and it installs
-// a fake discord.js client on global.client, which the routes read at
-// request time.
+// Must be imported BEFORE any application module: it points DB_FILE at a
+// fresh temp SQLite file so the knexfile (read at require time) never touches
+// ./db/ThetaGuard.db.
 
 const fs = require('fs');
 const os = require('os');
@@ -13,7 +11,6 @@ const knex = require('knex');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'thetaguard-test-'));
 process.env.DB_FILE = path.join(tmpDir, 'ThetaGuard.db');
-process.env.DISCORD_BOT_TOKEN = 'test-token';
 
 const config = require('../../knexfile');
 
@@ -61,8 +58,33 @@ async function migrate() {
     await setupDb.destroy();
 }
 
+// Wire a fully working API instance against the temp database and a fake
+// Discord client — the same wiring as src/index.js, minus the real client
+// and the sync job.
+function buildTestApp() {
+    const { createApp } = require('../../src/api/app');
+    const { createRepositories } = require('../../src/db/repositories');
+    const { createRequestStore } = require('../../src/services/requestStore');
+    const { createRoleSync } = require('../../src/services/roleSync');
+    const { createOpenThetaApi } = require('../../src/services/openTheta');
+    const { createDb } = require('../../src/db/knex');
+
+    const db = createDb();
+    const repos = createRepositories(db);
+    const requestStore = createRequestStore();
+    const client = createFakeClient();
+    // Unroutable base URL: contract tests must never reach the network. The
+    // fake client makes role sync exit before any ownership lookup.
+    const openTheta = createOpenThetaApi({ baseUrl: 'http://127.0.0.1:1/' });
+    const roleSync = createRoleSync({ client, repos, openTheta });
+    const app = createApp({ client, repos, requestStore, roleSync });
+
+    return { app, db, repos, requestStore };
+}
+
 module.exports = {
     migrate,
+    buildTestApp,
     createFakeClient,
     makeRolesArray,
     BOT_ROLE_POSITION,

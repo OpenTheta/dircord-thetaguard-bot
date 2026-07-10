@@ -6,19 +6,13 @@
 
 // setup must be imported first: it points DB_FILE at a temp SQLite file and
 // provides the fake discord client before any app module is loaded.
-import { migrate, createFakeClient } from '../helpers/setup.js';
+import { migrate, buildTestApp } from '../helpers/setup.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { Wallet } from 'ethers';
-import { createRequire } from 'node:module';
 
-// Load the app through Node's native require so the test and the server share
-// one module instance (vitest's transform pipeline would otherwise give the
-// test its own copy of Config.js and its USER_REQUESTS map).
-const nativeRequire = createRequire(import.meta.url);
-const { server } = nativeRequire('../../src/server.js');
-const { db } = nativeRequire('../../models/dbHelpers.js');
-const { USER_REQUESTS } = nativeRequire('../../src/Config.js');
+const { app: server, db, requestStore } = buildTestApp();
+const USER_REQUESTS = requestStore.userRequests;
 
 const GUILD_ID = 'guild-100';
 const USER_ID = 'user-100';
@@ -41,7 +35,6 @@ function makeUserRequest(overrides = {}) {
 }
 
 beforeAll(async () => {
-    global.client = createFakeClient();
     await migrate();
     await db('guilds').insert({
         guildId: GUILD_ID,

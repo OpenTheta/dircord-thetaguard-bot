@@ -36,6 +36,23 @@ Environment variables are documented in [`.env.example`](.env.example).
 | `npm run dev`        | Run with nodemon (development)            |
 | `npm start`          | Run with node (production)                |
 
+## Project structure
+
+```
+index.js               thin shim -> src/index.js
+src/
+  index.js             composition root: wires db, bot, api, jobs
+  config.js            env parsing + validation (fails fast on boot)
+  api/                 express app factory + routes (the frontend contract)
+  bot/                 discord client, events, button interactions, embeds
+  services/            roleSync (business rules), requestStore, openTheta
+                       client, signature verification
+  db/                  knex factory + per-table repositories
+  jobs/                periodic full role sync
+migrations/            knex migrations (additive only — see the plan doc)
+tests/                 contract tests (API) + unit tests (role rules)
+```
+
 ## Deployment (Docker)
 
 ```bash

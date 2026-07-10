@@ -1,6 +1,6 @@
 # ThetaGuard Bot — Restructure & Migration Plan
 
-Status: in progress — Phase 0 (safety net) and Phase 1 (hygiene) done; next: Phase 2 (restructure)
+Status: in progress — Phases 0 (safety net), 1 (hygiene), and 2 (restructure) done; next: Phase 3 (database layer)
 Last updated: 2026-07-10
 
 This document describes the strategy and step-by-step implementation plan for

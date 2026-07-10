@@ -13,9 +13,6 @@ module.exports = [
             sourceType: 'commonjs',
             globals: {
                 ...globals.node,
-                // The discord.js client is (for now) shared as a global;
-                // removed in the Phase 2 restructure.
-                client: 'writable',
             },
         },
         rules: {
