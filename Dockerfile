@@ -19,6 +19,10 @@ RUN mkdir -p /app/db
 # Expose port (default 5001, configurable via PORT env var)
 EXPOSE 5001
 
+# Container is healthy when the API answers and the database is reachable
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-5001}/healthz" || exit 1
+
 # Use node instead of nodemon for production
 CMD ["node", "index.js"]
 

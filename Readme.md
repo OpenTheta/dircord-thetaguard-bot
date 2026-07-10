@@ -66,6 +66,12 @@ This backs up the database (see below), builds the image, and starts the
 container with the `db/` directory mounted as a volume and `.env` passed as
 the environment.
 
+The container reports health via `GET /healthz` (200 + `botReady` flag when
+the database answers, 503 otherwise); `docker ps` shows the status. The
+process shuts down gracefully on SIGTERM (stops the sync loop, closes the
+HTTP server, Discord client, and database). Logs are structured JSON (pino);
+set `LOG_LEVEL` to adjust verbosity.
+
 ## Database backup & restore
 
 The production data lives in a single SQLite file on the `db/` volume:

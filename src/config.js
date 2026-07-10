@@ -17,6 +17,16 @@ function loadConfig() {
         apiBaseUrl: process.env.API_BASE_URL || 'https://api.opentheta.io/v1/',
         verifyBaseUrl: process.env.VERIFY_BASE_URL || 'https://opentheta.io/thetaguard/',
         syncIntervalMs: Number(process.env.SYNC_INTERVAL_MS) || 300000,
+        // Comma-separated CORS origin allow-list; empty keeps the historic
+        // wildcard so the deployed frontend keeps working without new config.
+        corsOrigins: (process.env.CORS_ORIGINS || '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+        rateLimit: {
+            windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
+            limit: Number(process.env.RATE_LIMIT_MAX) || 300,
+        },
     };
 }
 

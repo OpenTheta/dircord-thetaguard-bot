@@ -1,25 +1,52 @@
 const express = require('express');
+const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
+const { logger } = require('../logger');
 
-// Shared middleware for the frontend-facing API. CORS stays permissive (*)
-// because the frontend is served from a different origin; narrowing it to an
-// allow-list is planned for Phase 4.
-function applyMiddleware(app) {
-    app.use(express.json());
-    app.use(express.urlencoded({ extended: false }));
-    app.use(function (req, res, next) {
-        res.header('Access-Control-Allow-Origin', '*');
+// Without an allow-list this reproduces the historic wildcard behavior; with
+// CORS_ORIGINS set, only listed origins are echoed back.
+function corsMiddleware(allowedOrigins) {
+    return function (req, res, next) {
+        if (!allowedOrigins || allowedOrigins.length === 0) {
+            res.header('Access-Control-Allow-Origin', '*');
+        } else {
+            const origin = req.headers.origin;
+            if (origin && allowedOrigins.includes(origin)) {
+                res.header('Access-Control-Allow-Origin', origin);
+                res.header('Vary', 'Origin');
+            }
+        }
         res.header(
             'Access-Control-Allow-Headers',
             'Origin, X-Requested-With, Content-Type, Accept'
         );
         next();
-    });
+    };
+}
+
+function applyMiddleware(app, { corsOrigins = [], rateLimit: rateLimitConfig = {} } = {}) {
+    // one reverse-proxy hop (TLS termination) in front of the container
+    app.set('trust proxy', 1);
+    app.use(helmet());
+    app.use(express.json());
+    app.use(express.urlencoded({ extended: false }));
+    app.use(corsMiddleware(corsOrigins));
+    app.use(
+        rateLimit({
+            windowMs: rateLimitConfig.windowMs || 60000,
+            // generous: the verify flow needs a dozen requests per user
+            limit: rateLimitConfig.limit || 300,
+            standardHeaders: true,
+            legacyHeaders: false,
+            skip: (req) => req.path === '/healthz',
+        })
+    );
 }
 
 // Uniform 500 handler. The body shape (and the default message) is part of
 // the frontend contract.
 function handleErrors(res, error, message) {
-    console.log('Error:', error);
+    logger.error({ err: error }, 'API request failed');
     res.status(500).json({ error: message || 'Internal server error' });
 }
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const { handleErrors } = require('../middleware');
+const { logger } = require('../../logger');
 
 // Admin (role-setup) endpoints. Paths, response shapes, status codes, and
 // error strings are a fixed contract with the frontend — pinned by
@@ -70,7 +71,7 @@ function createAdminRoutes({ client, repos, requestStore, roleSync }) {
                     await repos.roles.add(newRole);
                 }
                 roleSync.setRoleForGuildUsers(newRole.guildId, newRole.roleId).catch((e) => {
-                    console.log('Error', e);
+                    logger.error({ err: e, guildId: newRole.guildId, roleId: newRole.roleId }, 'Role sync after /newrole failed');
                 });
                 res.json(await sessionWithRoles(data.requestId));
             } else {
@@ -91,7 +92,7 @@ function createAdminRoutes({ client, repos, requestStore, roleSync }) {
                 if ((await repos.roles.get(data.roleId)).length) {
                     await repos.roles.delete(data.guildId, data.roleId);
                     roleSync.setRoleForGuildUsers(data.guildId, data.roleId).catch((e) => {
-                        console.log('Error', e);
+                        logger.error({ err: e, guildId: data.guildId, roleId: data.roleId }, 'Role sync after /deleterole failed');
                     });
                 }
                 res.json(await sessionWithRoles(data.requestId));

@@ -6,6 +6,8 @@
 // database and unexpired sessions are restored at boot, so restarts and
 // redeploys no longer invalidate links that users are mid-flow on.
 
+const { logger } = require('../logger');
+
 const EXPIRATION_MS = 20 * 60 * 1000;
 
 function createRequestStore({ expirationMs = EXPIRATION_MS, repo = null } = {}) {
@@ -26,14 +28,14 @@ function createRequestStore({ expirationMs = EXPIRATION_MS, repo = null } = {}) 
                 payload: JSON.stringify(session),
                 expiresAt: session.timestamp + expirationMs,
             })
-            .catch((e) => console.error('[requestStore] Failed to persist session', e));
+            .catch((e) => logger.error({ err: e }, '[requestStore] Failed to persist session'));
     }
 
     function forget(requestId) {
         if (!repo) return Promise.resolve();
         return repo
             .delete(requestId)
-            .catch((e) => console.error('[requestStore] Failed to delete session', e));
+            .catch((e) => logger.error({ err: e }, '[requestStore] Failed to delete session'));
     }
 
     // Restore unexpired sessions from the database (called once at boot,
@@ -47,7 +49,7 @@ function createRequestStore({ expirationMs = EXPIRATION_MS, repo = null } = {}) 
             target[row.requestId] = JSON.parse(row.payload);
         }
         if (rows.length) {
-            console.log(`[requestStore] Restored ${rows.length} pending verification session(s)`);
+            logger.info({ count: rows.length }, '[requestStore] Restored pending verification sessions');
         }
     }
 
@@ -84,7 +86,7 @@ function createRequestStore({ expirationMs = EXPIRATION_MS, repo = null } = {}) 
         if (repo) {
             return repo
                 .deleteExpired(Date.now())
-                .catch((e) => console.error('[requestStore] Failed to prune sessions', e));
+                .catch((e) => logger.error({ err: e }, '[requestStore] Failed to prune sessions'));
         }
         return Promise.resolve();
     }
@@ -100,7 +102,7 @@ function createRequestStore({ expirationMs = EXPIRATION_MS, repo = null } = {}) 
         if (repo) {
             return repo
                 .deleteByGuild(guildId)
-                .catch((e) => console.error('[requestStore] Failed to delete guild sessions', e));
+                .catch((e) => logger.error({ err: e }, '[requestStore] Failed to delete guild sessions'));
         }
         return Promise.resolve();
     }

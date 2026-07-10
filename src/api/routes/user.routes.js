@@ -1,6 +1,7 @@
 const express = require('express');
 const { recoverSigner } = require('../../services/verification');
 const { handleErrors } = require('../middleware');
+const { logger } = require('../../logger');
 
 // User-facing verification endpoints. The paths, response shapes, status
 // codes, and error strings are a fixed contract with the frontend — pinned by
@@ -51,7 +52,7 @@ function createUserRoutes({ repos, requestStore, roleSync }) {
                     };
                     await repos.users.upsert(user);
                     roleSync.setRolesForUser(data.userId, user.guildId).catch((e) => {
-                        console.log('Error', e);
+                        logger.error({ err: e, userId: data.userId, guildId: user.guildId }, 'Role sync after /verifyserver failed');
                     });
                     res.json(user);
                 } else {
@@ -82,7 +83,7 @@ function createUserRoutes({ repos, requestStore, roleSync }) {
                                 res.json({ success: 'disconnected wallet' });
                             })
                             .catch((e) => {
-                                console.log('Error', e);
+                                logger.error({ err: e, userId: data.userId, guildId: data.guildId }, 'Disconnect failed');
                                 res.status(404);
                                 res.json({ error: 'Disconnecting error' });
                             });

@@ -8,8 +8,15 @@
 // - when trait_type/trait_value are set, only tokens with that trait count
 // - a user's ownership is the merged ownership of ALL wallets they have
 //   connected to the guild
+//
+// All Discord role mutations go through a small bounded queue so overlapping
+// syncs can't fire unbounded parallel writes.
 
-function createRoleSync({ client, repos, openTheta }) {
+const { createTaskQueue } = require('./taskQueue');
+const { logger } = require('../logger');
+
+function createRoleSync({ client, repos, openTheta, mutationConcurrency = 3 }) {
+    const mutationQueue = createTaskQueue({ concurrency: mutationConcurrency });
 
     // Merge the ownership records of all of a user's wallets into a single
     // owner object. Returns undefined when none of the wallets own anything.
@@ -43,16 +50,17 @@ function createRoleSync({ client, repos, openTheta }) {
     // user's (merged) ownership satisfies the rule, remove it when not.
     // userData undefined means "owns nothing" and always removes.
     async function setUserRole(role, userId, userData) {
+        const ctx = { userId, guildId: role?.guildId, roleId: role?.roleId };
         try {
             const guild = client.guilds.cache.get(role.guildId);
             if (!guild) {
-                console.warn(`[setUserRole] Guild not found: ${role.guildId} for user ${userId}, role ${role.roleId}`);
+                logger.warn(ctx, '[setUserRole] Guild not found');
                 return;
             }
 
             const discordRole = guild.roles.cache.get(role.roleId);
             if (!discordRole) {
-                console.warn(`[setUserRole] Role not found: ${role.roleId} in guild ${role.guildId} for user ${userId}`);
+                logger.warn(ctx, '[setUserRole] Role not found');
                 return;
             }
 
@@ -62,7 +70,7 @@ function createRoleSync({ client, repos, openTheta }) {
             } catch (error) {
                 if (error.code === 10007) {
                     // Unknown Member - user has left the guild
-                    console.warn(`[setUserRole] Member not found (likely left guild): userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`);
+                    logger.warn(ctx, '[setUserRole] Member not found (likely left guild)');
                     return;
                 }
                 throw error;
@@ -84,17 +92,17 @@ function createRoleSync({ client, repos, openTheta }) {
 
             if (eligible) {
                 if (!member.roles.cache.has(discordRole.id)) {
-                    console.log(`[setUserRole] Role added: userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`);
-                    await member.roles.add(discordRole);
+                    logger.info(ctx, '[setUserRole] Role added');
+                    await mutationQueue.add(() => member.roles.add(discordRole));
                 }
             } else {
                 if (member.roles.cache.has(discordRole.id)) {
-                    console.log(`[setUserRole] Role removed: userId=${userId}, guildId=${role.guildId}, roleId=${role.roleId}`);
-                    await member.roles.remove(discordRole);
+                    logger.info(ctx, '[setUserRole] Role removed');
+                    await mutationQueue.add(() => member.roles.remove(discordRole));
                 }
             }
         } catch (error) {
-            console.error(`[setUserRole] Error setting role: userId=${userId}, guildId=${role?.guildId}, roleId=${role?.roleId}`, error);
+            logger.error({ ...ctx, err: error }, '[setUserRole] Error setting role');
             throw error;
         }
     }
@@ -102,10 +110,11 @@ function createRoleSync({ client, repos, openTheta }) {
     // Re-evaluate every rule of a guild for one user (called after the user
     // connects or disconnects a wallet).
     async function setRolesForUser(userId, guildId) {
+        const ctx = { userId, guildId };
         try {
             const roles = await repos.roles.getByGuild(guildId);
             if (!roles || !Array.isArray(roles)) {
-                console.warn(`[setRolesForUser] No roles found for guildId=${guildId}, userId=${userId}`);
+                logger.warn(ctx, '[setRolesForUser] No roles found');
                 return;
             }
 
@@ -115,7 +124,7 @@ function createRoleSync({ client, repos, openTheta }) {
             for (const role of roles) {
                 try {
                     if (!role || !role.contract) {
-                        console.warn(`[setRolesForUser] Invalid role data: roleId=${role?.roleId}, guildId=${guildId}, userId=${userId}`);
+                        logger.warn({ ...ctx, roleId: role?.roleId }, '[setRolesForUser] Invalid role data');
                         continue;
                     }
 
@@ -128,15 +137,15 @@ function createRoleSync({ client, repos, openTheta }) {
                     }
 
                     await setUserRole(role, userId, owner).catch((e) => {
-                        console.error(`[setRolesForUser] Error setting role: roleId=${role.roleId}, guildId=${guildId}, userId=${userId}`, e);
+                        logger.error({ ...ctx, roleId: role.roleId, err: e }, '[setRolesForUser] Error setting role');
                     });
                 } catch (roleError) {
                     // Continue processing other roles even if one fails
-                    console.error(`[setRolesForUser] Error processing role: roleId=${role?.roleId}, guildId=${guildId}, userId=${userId}`, roleError);
+                    logger.error({ ...ctx, roleId: role?.roleId, err: roleError }, '[setRolesForUser] Error processing role');
                 }
             }
         } catch (e) {
-            console.error(`[setRolesForUser] Unexpected error: guildId=${guildId}, userId=${userId}`, e);
+            logger.error({ ...ctx, err: e }, '[setRolesForUser] Unexpected error');
         }
     }
 
@@ -165,35 +174,36 @@ function createRoleSync({ client, repos, openTheta }) {
     // Re-evaluate one rule for every connected user of a guild (called after
     // an admin creates, updates, or deletes the rule).
     async function setRoleForGuildUsers(guildId, roleId) {
+        const ctx = { guildId, roleId };
         try {
             const users = await repos.users.getInGuild(guildId);
             if (!users || !Array.isArray(users)) {
-                console.warn(`[setRoleForGuildUsers] No users found for guildId=${guildId}, roleId=${roleId}`);
+                logger.warn(ctx, '[setRoleForGuildUsers] No users found');
                 return;
             }
             const formattedUsers = groupUsersByWallets(users);
 
             const role = await repos.roles.get(roleId);
             if (!role || !role[0]) {
-                console.warn(`[setRoleForGuildUsers] Role not found: roleId=${roleId}, guildId=${guildId}`);
+                logger.warn(ctx, '[setRoleForGuildUsers] Role not found');
                 return;
             }
 
             const guild = client.guilds.cache.get(guildId);
             if (!guild) {
-                console.warn(`[setRoleForGuildUsers] Guild not found: guildId=${guildId}, roleId=${roleId}`);
+                logger.warn(ctx, '[setRoleForGuildUsers] Guild not found');
                 return;
             }
 
             try {
                 await guild.members.fetch();
             } catch (fetchError) {
-                console.error(`[setRoleForGuildUsers] Error fetching members: guildId=${guildId}, roleId=${roleId}`, fetchError);
+                logger.error({ ...ctx, err: fetchError }, '[setRoleForGuildUsers] Error fetching members');
             }
 
             const discordRole = guild.roles.cache.get(roleId);
             if (!discordRole) {
-                console.warn(`[setRoleForGuildUsers] Discord role not found: roleId=${roleId}, guildId=${guildId}`);
+                logger.warn(ctx, '[setRoleForGuildUsers] Discord role not found');
                 return;
             }
 
@@ -208,11 +218,11 @@ function createRoleSync({ client, repos, openTheta }) {
                     await setUserRole(role[0], user.userId, owner);
                 } catch (userError) {
                     // Continue processing other users even if one fails
-                    console.error(`[setRoleForGuildUsers] Error processing user: userId=${user?.userId}, roleId=${roleId}, guildId=${guildId}`, userError);
+                    logger.error({ ...ctx, userId: user?.userId, err: userError }, '[setRoleForGuildUsers] Error processing user');
                 }
             }
         } catch (e) {
-            console.error(`[setRoleForGuildUsers] Unexpected error: guildId=${guildId}, roleId=${roleId}`, e);
+            logger.error({ ...ctx, err: e }, '[setRoleForGuildUsers] Unexpected error');
         }
     }
 
@@ -224,9 +234,10 @@ function createRoleSync({ client, repos, openTheta }) {
             for (const key of keys) {
                 const role = rolesToCheck[key];
                 if (!role || !role.contract) {
-                    console.warn(`[setRolesForUsers] Invalid role data for roleId=${key}`);
+                    logger.warn({ roleId: key }, '[setRolesForUsers] Invalid role data');
                     continue;
                 }
+                const ctx = { roleId: key, guildId: role.guildId };
 
                 const owners = await openTheta.fetchOwners(role.contract, role.include_market);
                 if (!owners) {
@@ -236,14 +247,14 @@ function createRoleSync({ client, repos, openTheta }) {
                 }
 
                 if (!role.users || !Array.isArray(role.users)) {
-                    console.warn(`[setRolesForUsers] No users array for roleId=${key}, guildId=${role.guildId}`);
+                    logger.warn(ctx, '[setRolesForUsers] No users array');
                     continue;
                 }
 
                 for (const user of role.users) {
                     try {
                         if (!user || !user.userId || !user.wallets) {
-                            console.warn(`[setRolesForUsers] Invalid user data for roleId=${key}, guildId=${role.guildId}`);
+                            logger.warn(ctx, '[setRolesForUsers] Invalid user data');
                             continue;
                         }
 
@@ -251,12 +262,12 @@ function createRoleSync({ client, repos, openTheta }) {
                         await setUserRole(role, user.userId, owner);
                     } catch (userError) {
                         // Continue processing other users even if one fails
-                        console.error(`[setRolesForUsers] Error processing user: userId=${user?.userId}, roleId=${key}, guildId=${role.guildId}`, userError);
+                        logger.error({ ...ctx, userId: user?.userId, err: userError }, '[setRolesForUsers] Error processing user');
                     }
                 }
             }
         } catch (e) {
-            console.error(`[setRolesForUsers] Unexpected error`, e);
+            logger.error({ err: e }, '[setRolesForUsers] Unexpected error');
         }
     }
 

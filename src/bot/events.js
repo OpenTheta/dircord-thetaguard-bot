@@ -1,11 +1,12 @@
 const { PermissionsBitField, ChannelType } = require('discord.js');
 const { setupRolesChannelMessage, verifyChannelMessage } = require('./embeds');
+const { logger } = require('../logger');
 
 // Create the thetaguard-config (private) and thetaguard-verify (public)
 // channels in a newly joined guild and store their ids.
 async function newGuild(client, guildId, repos) {
     try {
-        console.log('Create new guild', guildId);
+        logger.info({ guildId }, 'Setting up new guild');
         const guild = await client.guilds.fetch(guildId);
 
         // private admin channel
@@ -43,10 +44,10 @@ async function newGuild(client, guildId, repos) {
             verifyChannelId: verifyChannel.id,
             configChannelId: configChannel.id,
         }).catch((e) => {
-            console.log(e);
+            logger.error({ guildId, err: e }, 'Failed to store new guild');
         });
     } catch (e) {
-        console.log('Error adding new Guild', e);
+        logger.error({ guildId, err: e }, 'Error adding new guild');
     }
 }
 
@@ -59,8 +60,28 @@ async function resendMessage(message, repos) {
 }
 
 function registerBotEvents(client, { repos, requestStore, interactions, fullSync, syncIntervalMs }) {
+    let syncTimer = null;
+    let stopped = false;
+
+    // Self-rescheduling timeout instead of setInterval: adds jitter so
+    // restarts don't align the sync across processes, and a slow pass delays
+    // the next one instead of stacking.
+    function scheduleSync() {
+        if (stopped) return;
+        const jitter = Math.floor(Math.random() * 30000);
+        syncTimer = setTimeout(async () => {
+            try {
+                await fullSync.run();
+            } catch (e) {
+                logger.error({ err: e }, 'Full sync failed');
+            }
+            scheduleSync();
+        }, syncIntervalMs + jitter);
+    }
+
     client.once('ready', () => {
-        setInterval(() => fullSync.run(), syncIntervalMs);
+        logger.info({ user: client.user.tag }, 'Discord bot ready');
+        scheduleSync();
     });
 
     client.on('guildCreate', (guild) => {
@@ -68,7 +89,7 @@ function registerBotEvents(client, { repos, requestStore, interactions, fullSync
     });
 
     client.on('guildDelete', async (guild) => {
-        console.log(`${client.user.username} was kicked from ${guild.id}.`);
+        logger.info({ guildId: guild.id }, 'Bot was removed from guild');
         // the FK cascade removes the guild's roles rows
         await repos.guilds.delete(guild.id);
         requestStore.deleteByGuild(guild.id);
@@ -91,10 +112,17 @@ function registerBotEvents(client, { repos, requestStore, interactions, fullSync
 
         if (message.content.trim() === '!reload') {
             resendMessage(message, repos).catch((e) => {
-                console.log('Error resending setup message', e);
+                logger.error({ guildId: message.guildId, err: e }, 'Error resending setup message');
             });
         }
     });
+
+    return {
+        stop() {
+            stopped = true;
+            if (syncTimer) clearTimeout(syncTimer);
+        },
+    };
 }
 
 module.exports = { registerBotEvents, newGuild, resendMessage };

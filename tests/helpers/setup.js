@@ -49,6 +49,7 @@ function createFakeClient() {
     return {
         user: { id: 'fake-bot-user' },
         guilds: { cache: { get: () => guild } },
+        isReady: () => true,
     };
 }
 
@@ -77,7 +78,7 @@ function buildTestApp() {
     // fake client makes role sync exit before any ownership lookup.
     const openTheta = createOpenThetaApi({ baseUrl: 'http://127.0.0.1:1/' });
     const roleSync = createRoleSync({ client, repos, openTheta });
-    const app = createApp({ client, repos, requestStore, roleSync });
+    const app = createApp({ client, db, repos, requestStore, roleSync });
 
     return { app, db, repos, requestStore };
 }
