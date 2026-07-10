@@ -19,9 +19,7 @@ module.exports = [
             },
         },
         rules: {
-            // The legacy code has plenty of unused imports/vars; cleaned up in
-            // Phase 1. Keep visible as warnings without failing CI.
-            'no-unused-vars': 'warn',
+            'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
         },
     },
     {

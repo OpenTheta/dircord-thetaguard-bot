@@ -20,7 +20,7 @@ Data is stored in SQLite via knex (`db/ThetaGuard.db`).
 npm install
 cp .env.example .env   # then fill in DISCORD_BOT_TOKEN
 npx knex migrate:latest
-npm run dev            # local development (nodemon)
+npm run dev            # local development (nodemon, auto-restart)
 ```
 
 Environment variables are documented in [`.env.example`](.env.example).
@@ -33,8 +33,8 @@ Environment variables are documented in [`.env.example`](.env.example).
 | `npm run test:watch` | Tests in watch mode                       |
 | `npm run lint`       | ESLint                                    |
 | `npm run format`     | Prettier check (`format:fix` to write)    |
-| `npm start`          | Run with nodemon (development)            |
-| `npm run start:prod` | Run with node (production)                |
+| `npm run dev`        | Run with nodemon (development)            |
+| `npm start`          | Run with node (production)                |
 
 ## Deployment (Docker)
 

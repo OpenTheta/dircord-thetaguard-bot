@@ -1,12 +1,10 @@
 const axios = require('axios')
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, ChannelType, time} = require("discord.js")
+const crypto = require('crypto')
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, PermissionsBitField, ChannelType} = require("discord.js")
 require("dotenv").config();
 const wait = require('node:timers/promises').setTimeout;
 const {FOOTER_TEXT, DESCRIPTION, LOGO_URL, VERIFY_BASE_URL, USER_REQUESTS, ADMIN_REQUESTS, API_BASE_URL} = require('./Config')
 const database = require("../models/dbHelpers");
-const {ethers} = require("ethers");
-require("dotenv").config();
-const { Client, Collection, GatewayIntentBits, DMChannel } = require("discord.js");
 
 module.exports = {
     newGuild,
@@ -262,62 +260,18 @@ function getMessage(community, userName, interactionId, timestamp) {
         "- Timestamp: "+timestamp
 }
 
+// requestIds act as bearer tokens for verification sessions, so they must be
+// generated from a cryptographically secure source.
 function generateString(length) {
-    const characters ='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const bytes = crypto.randomBytes(length);
     let result = '';
-    const charactersLength = characters.length;
-    for ( let i = 0; i < length; i++ ) {
-        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(bytes[i] % characters.length);
     }
     return result;
 }
 
-// async function setRoleForUsers(guildId, newRole) {
-//     let users = await database.getUsersInGuild(guildId)
-//     let checkRoles = await database.getGuildRole({
-//         roleId: newRole,
-//         guildId: guildId
-//     })
-//     let guild = await global.client.guilds.cache.get(guildId)
-//     await guild.members.fetch()
-//     for(let checkRole of checkRoles) {
-//         let membersWithRole = guild.roles.cache.get(checkRole.roleId).members.map(m=>m.user);
-//         let discordRole = await guild.roles.cache.get(newRole)
-//         // console.log(discordRole)
-//         for(let user of users) {
-//             let url = `https://api.opentheta.io/v1/items?ownerAddress=${user.wallet}&contractAddress=${checkRole.contract}&limit=1000`
-//             let res = await axios.get(url, {
-//                 headers: { 'User-Agent':'OT ThetaGuard Bot' }
-//             })
-//             // console.log(res.data.items.length, checkRole.min_amount, checkRole.max_amount)
-//             if(checkRole.min_amount <= res.data.items.length && (checkRole.max_amount >= res.data.items.length || !checkRole.max_amount)) {
-//                 let member = await guild.members.fetch(user.userId);
-//                 // console.log(member)
-//                 await member.roles.add(discordRole)
-//             }
-//         }
-//         for (let member of membersWithRole) {
-//             let discordMember = guild.members.cache.get(member.id);
-//             let user = await database.getUserGuild(member.id, guildId);
-//             console.log(user)
-//             if(user[0]) {
-//                 let url = `https://api.opentheta.io/v1/items?ownerAddress=${user[0].wallet}&contractAddress=${checkRole.contract}&limit=1000`
-//                 let res = await axios.get(url, {
-//                     headers: { 'User-Agent':'OT ThetaGuard Bot' }
-//                 })
-//                 console.log(url)
-//                 console.log(res.data)
-//                 if(!(checkRole.min_amount <= res.data.items.length && (checkRole.max_amount >= res.data.items.length || !checkRole.max_amount))) {
-//                     await discordMember.roles.remove(discordRole)
-//                     console.log("role removed (1)")
-//                 }
-//             } else {
-//                 await discordMember.roles.remove(discordRole)
-//                 console.log("role removed (2)")
-//             }
-//         }
-//     }
-// }
 
 async function setRolesForUser(userId, guildId) {
     try {
@@ -539,140 +493,7 @@ async function setUserRole(role, userId, userData) {
 
 
 
-async function setGuildRolesForUsersByContract(contract, guildId) {
-    try {
-        if (!contract || !guildId) {
-            console.warn(`[setGuildRolesForUsersByContract] Missing parameters: contract=${contract}, guildId=${guildId}`)
-            return
-        }
 
-        let url_includeMarket = `${API_BASE_URL}contracts/${contract}/attributes?includeForSale=true`
-        let url_excludeMarket = `${API_BASE_URL}contracts/${contract}/attributes?includeForSale=false`
-        
-        let res_includeMarket = await axios.get(url_includeMarket, {
-            headers: { 'User-Agent':'OT ThetaGuard Bot' }
-        }).catch((e) => {
-            console.error(`[setGuildRolesForUsersByContract] API error (includeMarket): contract=${contract}, guildId=${guildId}, url=${url_includeMarket}`, e)
-            return null
-        })
-        
-        let res_excludeMarket = await axios.get(url_excludeMarket, {
-            headers: { 'User-Agent':'OT ThetaGuard Bot' }
-        }).catch((e) => {
-            console.error(`[setGuildRolesForUsersByContract] API error (excludeMarket): contract=${contract}, guildId=${guildId}, url=${url_excludeMarket}`, e)
-            return null
-        })
-
-        if (!res_includeMarket || !res_includeMarket.data || !res_includeMarket.data.owners) {
-            console.warn(`[setGuildRolesForUsersByContract] Invalid API response (includeMarket): contract=${contract}, guildId=${guildId}`)
-        }
-        
-        if (!res_excludeMarket || !res_excludeMarket.data || !res_excludeMarket.data.owners) {
-            console.warn(`[setGuildRolesForUsersByContract] Invalid API response (excludeMarket): contract=${contract}, guildId=${guildId}`)
-        }
-
-        let roles = await database.getGuildRolesByContract(guildId, contract)
-        if (!roles || !Array.isArray(roles)) {
-            console.warn(`[setGuildRolesForUsersByContract] No roles found: contract=${contract}, guildId=${guildId}`)
-            return
-        }
-        
-        for (let role of roles) {
-            try {
-                if (!role || !role.roleId) {
-                    console.warn(`[setGuildRolesForUsersByContract] Invalid role data: contract=${contract}, guildId=${guildId}`)
-                    continue
-                }
-                
-                let owners
-                if(role.include_market) {
-                    if (!res_includeMarket || !res_includeMarket.data || !res_includeMarket.data.owners) {
-                        console.warn(`[setGuildRolesForUsersByContract] Skipping role (no includeMarket data): roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`)
-                        continue
-                    }
-                    owners = res_includeMarket.data.owners
-                } else {
-                    if (!res_excludeMarket || !res_excludeMarket.data || !res_excludeMarket.data.owners) {
-                        console.warn(`[setGuildRolesForUsersByContract] Skipping role (no excludeMarket data): roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`)
-                        continue
-                    }
-                    owners = res_excludeMarket.data.owners
-                }
-                
-                if (!Array.isArray(owners)) {
-                    console.warn(`[setGuildRolesForUsersByContract] Owners is not an array: roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`)
-                    continue
-                }
-                
-                for (let owner of owners) {
-                    try {
-                        if (!owner || !owner.wallet) {
-                            continue
-                        }
-                        
-                        let wallet = await database.getWalletUser(owner.wallet)
-                        if (!wallet || !Array.isArray(wallet) || !wallet[0] || !wallet[0].userId) {
-                            continue
-                        }
-                        
-                        let user = await database.getUserGuild(wallet[0].userId, guildId)
-                        if(user && user[0]) {
-                            await setUserRole(role, wallet[0].userId, owner).catch((e) => {
-                                console.error(`[setGuildRolesForUsersByContract] Error setting role: userId=${wallet[0].userId}, roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`, e)
-                            })
-                        }
-                    } catch (ownerError) {
-                        // Continue processing other owners even if one fails
-                        console.error(`[setGuildRolesForUsersByContract] Error processing owner: roleId=${role.roleId}, contract=${contract}, guildId=${guildId}`, ownerError)
-                    }
-                }
-            } catch (roleError) {
-                // Continue processing other roles even if one fails
-                console.error(`[setGuildRolesForUsersByContract] Error processing role: roleId=${role?.roleId}, contract=${contract}, guildId=${guildId}`, roleError)
-            }
-        }
-    } catch (e) {
-        console.error(`[setGuildRolesForUsersByContract] Unexpected error: contract=${contract}, guildId=${guildId}`, e)
-    }
-}
-
-// async function setRoleForGuildUsers(guildId, roleId) {
-//     let users = await database.getUsersInGuild(guildId)
-//     let role = await database.getGuildRole(roleId)
-//     let guild = await global.client.guilds.cache.get(guildId)
-//     await guild.members.fetch()
-//     let membersWithRole = guild.roles.cache.get(roleId).members.map(m=>m.user);
-//     let discordRole = await guild.roles.cache.get(roleId)
-//     if(role[0]) {
-//         let url = `https://api.opentheta.io/v1/contracts/${role[0].contract}/attributes?includeForSale=${Boolean(role[0].include_market)}`
-//         let res = await axios.get(url, {
-//             headers: { 'User-Agent':'OT ThetaGuard Bot' }
-//         }).catch((e) => {console.log("Error",e)})
-//         let owners = res.data.owners
-//         users.forEach((user) => {
-//             let owner = owners.find((owner) => {
-//                 return owner.address === user.wallet.toLowerCase()
-//             })
-//             if(owner) {
-//                 setUserRole(role[0], user.userId, owner)
-//             } else {
-//                 if(membersWithRole.find((member) => {return user.userId === member.id})) {
-//                     guild.members.fetch(user.userId).then((member) => {
-//                         member.roles.remove(discordRole)
-//                     })
-//                 }
-//             }
-//         })
-//     } else {
-//         users.forEach((user) => {
-//             if(membersWithRole.find((member) => {return user.userId === member.id})) {
-//                 guild.members.fetch(user.userId).then((member) => {
-//                     member.roles.remove(discordRole)
-//                 })
-//             }
-//         })
-//     }
-// }
 
 async function setRoleForGuildUsers(guildId, roleId) {
     try {

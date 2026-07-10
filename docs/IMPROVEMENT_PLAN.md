@@ -1,7 +1,7 @@
 # ThetaGuard Bot — Restructure & Migration Plan
 
-Status: proposal
-Last updated: 2026-07-09
+Status: in progress — Phase 0 (safety net) and Phase 1 (hygiene) done; next: Phase 2 (restructure)
+Last updated: 2026-07-10
 
 This document describes the strategy and step-by-step implementation plan for
 modernizing this repository. It is written around two hard constraints:

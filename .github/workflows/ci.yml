@@ -13,8 +13,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Dev tooling (vitest 4, eslint 10) needs Node >= 20. Production
-          # still runs Node 18 until the Phase 1 image upgrade.
+          # Matches the production Docker image (node:22-alpine)
           node-version: 22
           cache: npm
 
