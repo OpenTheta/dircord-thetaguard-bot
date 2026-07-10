@@ -5,11 +5,21 @@ const { FALLBACK_GUILD_ICON, FALLBACK_USER_ICON, adminLinkReply, verifyLinkReply
 // Button handlers for the two pinned channel messages. Each click registers a
 // short-lived session in the request store and replies with a personal link
 // into the frontend, which then talks to our HTTP API using the requestId.
+// Discord deprecated discriminators; migrated users report '0' and are
+// displayed by plain username. Legacy users keep the username#1234 format
+// (this name appears in the message the user signs, so it must stay stable
+// for a given user).
+function displayName(user) {
+    return user.discriminator && user.discriminator !== '0'
+        ? `${user.username}#${user.discriminator}`
+        : user.username;
+}
+
 function createInteractionHandlers({ requestStore, verifyBaseUrl }) {
 
     function sessionBasics(interaction) {
         return {
-            name: interaction.user.username + '#' + interaction.user.discriminator,
+            name: displayName(interaction.user),
             timestamp: new Date().getTime(),
             interactionId: interaction.id,
             community: interaction.member.guild.name,
@@ -65,4 +75,4 @@ function createInteractionHandlers({ requestStore, verifyBaseUrl }) {
     return { setupRolesButton, letsGoButton };
 }
 
-module.exports = { createInteractionHandlers };
+module.exports = { createInteractionHandlers, displayName };

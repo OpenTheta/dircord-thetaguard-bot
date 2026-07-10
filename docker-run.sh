@@ -19,6 +19,10 @@ fi
 # Build the Docker image
 docker build -t thetaguard-bot .
 
+# Replace any previous container of the same name
+docker stop thetaguard-bot 2>/dev/null || true
+docker rm thetaguard-bot 2>/dev/null || true
+
 # Run the container with volume mounts for db and .env file
 docker run -d \
   --name thetaguard-bot \

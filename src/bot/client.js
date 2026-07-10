@@ -1,14 +1,13 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 
+// Only non-privileged intents plus GuildMembers (needed to fetch members for
+// role assignment). MessageContent/GuildMessages are gone — the old !reload
+// text command is now the /reload slash command.
 function createClient() {
     return new Client({
         intents: [
             GatewayIntentBits.Guilds,
-            GatewayIntentBits.GuildMessages,
             GatewayIntentBits.GuildMembers,
-            // Needed only for the !reload text command; replaced by a slash
-            // command (and dropped) in Phase 5.
-            GatewayIntentBits.MessageContent,
         ],
     });
 }

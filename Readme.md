@@ -56,15 +56,29 @@ migrations/            knex migrations (additive only — see the plan doc)
 tests/                 contract tests (API) + unit tests (role rules)
 ```
 
+## Discord commands
+
+- **Buttons**: "Let's Go!" in `thetaguard-verify` starts wallet verification;
+  "Setup Roles!" in `thetaguard-config` opens the admin role setup.
+- **`/reload`** (requires Manage Server): re-sends the pinned setup message in
+  the `thetaguard-config` channel if it was deleted.
+
+The bot only needs the `Guilds` and `GuildMembers` gateway intents — no
+privileged message-content access.
+
 ## Deployment (Docker)
 
 ```bash
-./docker-run.sh
+./docker-run.sh        # backup + build + (re)start the container
+# or
+docker compose up -d --build
 ```
 
-This backs up the database (see below), builds the image, and starts the
-container with the `db/` directory mounted as a volume and `.env` passed as
-the environment.
+`docker-run.sh` backs up the database (see below), builds the image, replaces
+any previous container, and starts the new one with the `db/` directory
+mounted as a volume and `.env` passed as the environment. Tagging a release
+(`git tag v1.x.y && git push --tags`) also publishes the image to GHCR via
+GitHub Actions.
 
 The container reports health via `GET /healthz` (200 + `botReady` flag when
 the database answers, 503 otherwise); `docker ps` shows the status. The

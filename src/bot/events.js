@@ -1,14 +1,19 @@
-const { PermissionsBitField, ChannelType } = require('discord.js');
+const { PermissionsBitField, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { setupRolesChannelMessage, verifyChannelMessage } = require('./embeds');
 const { logger } = require('../logger');
 
 // Create the thetaguard-config (private) and thetaguard-verify (public)
 // channels in a newly joined guild and store their ids.
 async function newGuild(client, guildId, repos) {
+    let guild;
     try {
-        logger.info({ guildId }, 'Setting up new guild');
-        const guild = await client.guilds.fetch(guildId);
+        guild = await client.guilds.fetch(guildId);
+    } catch (e) {
+        logger.error({ guildId, err: e }, 'Could not fetch newly joined guild');
+        return;
+    }
 
+    try {
         // private admin channel
         const configChannel = await guild.channels.create({
             name: 'thetaguard-config',
@@ -43,20 +48,54 @@ async function newGuild(client, guildId, repos) {
             guildId: guildId,
             verifyChannelId: verifyChannel.id,
             configChannelId: configChannel.id,
-        }).catch((e) => {
-            logger.error({ guildId, err: e }, 'Failed to store new guild');
         });
+        logger.info({ guildId }, 'New guild set up');
     } catch (e) {
-        logger.error({ guildId, err: e }, 'Error adding new guild');
+        logger.error({ guildId, err: e }, 'Error setting up new guild');
+        // Most common cause: the bot is missing the Manage Channels
+        // permission. Tell the guild owner instead of failing silently.
+        try {
+            const owner = await guild.fetchOwner();
+            await owner.send(
+                `Hi! ThetaGuard could not create its channels in "${guild.name}". ` +
+                'Please make sure the bot has the "Manage Channels" and "Manage Roles" ' +
+                'permissions, then kick and re-invite it to try again.'
+            );
+        } catch (dmError) {
+            logger.warn({ guildId, err: dmError }, 'Could not DM the guild owner about the failed setup');
+        }
     }
 }
 
-// Re-send the pinned setup message in the private config channel (used when
-// the original message was deleted).
-async function resendMessage(message, repos) {
-    const guild = await repos.guilds.get(message.guildId);
-    if (message.channel.id !== guild[0].configChannelId) return;
-    await message.channel.send(setupRolesChannelMessage());
+// /reload — re-send the pinned setup message in the private config channel
+// (used when the original message was deleted).
+async function handleReloadCommand(interaction, repos) {
+    const guildRows = await repos.guilds.get(interaction.guildId);
+    if (!guildRows[0]) {
+        await interaction.reply({
+            content: 'ThetaGuard is not set up in this server yet.',
+            ephemeral: true,
+        });
+        return;
+    }
+    if (interaction.channelId !== guildRows[0].configChannelId) {
+        await interaction.reply({
+            content: 'Please run /reload inside the thetaguard-config channel.',
+            ephemeral: true,
+        });
+        return;
+    }
+    await interaction.channel.send(setupRolesChannelMessage());
+    await interaction.reply({ content: 'Setup message re-sent.', ephemeral: true });
+}
+
+async function registerSlashCommands(client) {
+    await client.application.commands.create({
+        name: 'reload',
+        description: 'Re-send the ThetaGuard setup message in this channel',
+        defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+        dmPermission: false,
+    });
 }
 
 function registerBotEvents(client, { repos, requestStore, interactions, fullSync, syncIntervalMs }) {
@@ -81,6 +120,9 @@ function registerBotEvents(client, { repos, requestStore, interactions, fullSync
 
     client.once('ready', () => {
         logger.info({ user: client.user.tag }, 'Discord bot ready');
+        registerSlashCommands(client).catch((e) => {
+            logger.error({ err: e }, 'Failed to register slash commands');
+        });
         scheduleSync();
     });
 
@@ -96,6 +138,15 @@ function registerBotEvents(client, { repos, requestStore, interactions, fullSync
     });
 
     client.on('interactionCreate', (interaction) => {
+        if (interaction.isChatInputCommand()) {
+            if (interaction.commandName === 'reload') {
+                handleReloadCommand(interaction, repos).catch((e) => {
+                    logger.error({ guildId: interaction.guildId, err: e }, 'Reload command failed');
+                });
+            }
+            return;
+        }
+
         if (!interaction.isButton()) return;
 
         if (interaction.customId === 'letsgo') {
@@ -103,17 +154,6 @@ function registerBotEvents(client, { repos, requestStore, interactions, fullSync
         }
         if (interaction.customId === 'setupRoles') {
             interactions.setupRolesButton(interaction);
-        }
-    });
-
-    client.on('messageCreate', (message) => {
-        // Ignore messages sent by a bot
-        if (message.author.bot) return;
-
-        if (message.content.trim() === '!reload') {
-            resendMessage(message, repos).catch((e) => {
-                logger.error({ guildId: message.guildId, err: e }, 'Error resending setup message');
-            });
         }
     });
 
@@ -125,4 +165,4 @@ function registerBotEvents(client, { repos, requestStore, interactions, fullSync
     };
 }
 
-module.exports = { registerBotEvents, newGuild, resendMessage };
+module.exports = { registerBotEvents, newGuild, handleReloadCommand, registerSlashCommands };

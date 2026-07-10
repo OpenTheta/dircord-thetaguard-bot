@@ -1,0 +1,11 @@
+services:
+  thetaguard-bot:
+    build: .
+    container_name: thetaguard-bot
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '5001:5001'
+    volumes:
+      # the SQLite database (ThetaGuard.db + WAL files) lives on the host
+      - ./db:/app/db
