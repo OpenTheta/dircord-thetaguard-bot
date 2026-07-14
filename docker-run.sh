@@ -12,8 +12,10 @@ if [ -f db/ThetaGuard.db ]; then
   [ -f db/ThetaGuard.db-wal ] && cp db/ThetaGuard.db-wal "$BACKUP-wal"
   echo "Database backed up to $BACKUP"
   # Keep the 20 most recent backups
-  ls -1t db/backups/ThetaGuard-*.db 2>/dev/null | tail -n +21 | xargs -r rm --
-  ls -1t db/backups/ThetaGuard-*.db-wal 2>/dev/null | tail -n +21 | xargs -r rm --
+  # A non-matching glob leaves ls a bogus arg, so ls exits non-zero; without
+  # `|| true` that trips pipefail+set -e and aborts the deploy after the backup.
+  ls -1t db/backups/ThetaGuard-*.db 2>/dev/null | tail -n +21 | xargs -r rm -- || true
+  ls -1t db/backups/ThetaGuard-*.db-wal 2>/dev/null | tail -n +21 | xargs -r rm -- || true
 fi
 
 # Build the Docker image
